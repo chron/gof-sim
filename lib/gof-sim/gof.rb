@@ -1,93 +1,110 @@
 module GauntletOfFools
-	class Option < Struct.new(:hero, :weapon, :current_owner, :brags)
-		def inspect
-			"%s/%s+%p%s" % [hero.name, weapon.name, brags, current_owner ? " (#{current_owner})" : '']
+	class BragPhase
+		attr_reader :player_names, :options
+
+		def initialize *player_names
+			@player_names = player_names
+			n = player_names.size
+
+			heroes = Hero.all.shuffle.take(n)
+			weapons = Weapon.all.shuffle.take(n)
+
+			@options = heroes.zip(weapons).map { |h,w| Option.new(h, w, nil, []) }
+			@finished = false
 		end
 
-		def is_assigned?
-			current_owner
-		end
-	end
-
-	class Game
-		def initialize
-			@player_names = []
-			@players = nil
-			@encounters = []
-
-			@options = []
-
-			@encounters = Encounter.all.shuffle # FIXME: do we need the whole decks generated?
-			@heroes = Hero.all.shuffle
-			@weapons = Weapon.all.shuffle
-		end
-
-		def << new_player
-			raise "bidding already finished" if finished_bidding?
-
-			@player_names << new_player
-			@options << Option.new(@heroes.pop, @weapons.pop, nil, [])
-			self
-		end
-
-		def options
-			@options
-		end
-
-		def bid player, option_index, *additional_brags
+		def bid player, opt, *additional_brags
+			raise "Brag phase over" if @finished
 			raise "Unknown brag" if additional_brags.any? { |b| !BRAGS.include?(b) }
 			raise "Already has something" if @options.any? { |o| o.current_owner == player }
-			opt = @options[option_index]
+			raise "Invalid player" unless @player_names.include?(player)
 
 			new_brags = (opt.brags + additional_brags).uniq
 
 			if !opt.is_assigned? || new_brags.size > opt.brags.size
-				puts "%s takes the %s%s" % [player, opt.hero.name, additional_brags.size>0 ? " adding #{additional_brags}" : '']
+				Logger.log "%s takes the %s%s" % [player, opt.hero.name, additional_brags.size>0 ? " adding #{additional_brags}" : '']
 				opt.current_owner = player
 				opt.brags += additional_brags
 			end
 
-			assign_players if @options.all? { |o| o.is_assigned? }
+			@finished = true if @options.all? { |o| o.is_assigned? }
 		end
 
-		def assign_players
-			@players = @options.map { |o| Player.new(o.current_owner, o.hero, o.weapon, o.brags)}.shuffle
+		def finished?
+			@finished
 		end
 
-		def finished_bidding?
-			@players
+		def create_players
+			raise  "phase not finished" unless @finished
+			@options.map { |o| o.to_player }.shuffle # FIXME: shuffle?
+		end
+	end
+
+	class EncounterPhase
+		def initialize #encounter_seed=nil
+			#srand(encounter_seed) if encounter_seed
+			@encounters = Encounter.all.shuffle
+
+			#srand if encounter_seed
 		end
 
-		def play
-			raise "no players" if !@players
+		def run *players
+			raise "no players" if players.empty?
 
-			active_players = @players.dup
+			active_players = players.dup
 
 			@encounters.each_with_index do |encounter, i|
-				puts "Encounter %i: %s" % [i+1, encounter.display_name]
+				Logger.log "Encounter %i: %s" % [i+1, encounter.display_name]
 
 				active_players.each do |player|
 					player.fight(encounter)
 				end
 
-				active_players.delete_if { |p| p.dead? && !puts("%s is defeated with %i coins." % [p.name, p.treasure])}
+				active_players.delete_if do |p|
+					d = p.dead? 
+					Logger.log("%s is defeated with %i coins." % [p.name, p.treasure]) if d
+					d
+				end
 				break if active_players.empty?
 			end
 
-			puts
-			@players.sort_by { |p| -p.treasure }.each do |p| # TODO: tiebreaker?
-				puts "%3i %10s | %-30s" % [p.treasure, p.name, "#{p.hero.name}/#{p.weapon.name} + #{p.brags}"]
-			end
+			players
+		end
+	end
+
+	#puts
+	#@players.sort_by { |p| -p.treasure }.each do |p| # TODO: tiebreaker?
+	#	puts "%3i %10s | %-30s" % [p.treasure, p.name, "#{p.hero.name}/#{p.weapon.name} + #{p.brags}"]
+	#end
+end
+
+games = (0...1000).map { GauntletOfFools::EncounterPhase.new }
+results = Hash.new { |h,k| h[k] = Hash.new { |h2,k2| h2[k2] = []}}
+brag_opts = [[], *GauntletOfFools::BRAGS]
+
+combinations = GauntletOfFools::Hero.all.product(GauntletOfFools::Weapon.all).map do |h,w|
+	n = "#{h.name}#{w.name.tr(' ','')}"
+	opt = GauntletOfFools::Option.new(h, w, n, [])
+end
+
+combinations.each do |opt|
+	brag_opts.each do |b| # *GauntletOfFools::BRAGS
+		games.each do |g|
+			opt.brags = [*b]
+			p = opt.to_player
+			g.run(p)
+			results["#{p.hero}/#{p.weapon}"][b] << p.treasure
 		end
 	end
 end
 
-game = GauntletOfFools::Game.new
-game << "One" << "Two"
-p game.options
+puts ('%50s' + (' %12s' * brag_opts.size)) % ['', *brag_opts]
 
-game.bid "One", 0
-game.bid "Two", 0, :no_breakfast
-game.bid "One", 1
+# averages
+results = results.to_a.map { |n,b| [n, b.map { |k,v| v.inject { |a,c| a + c}.to_f / v.size}] }
 
-game.play
+results.sort_by { |n,r| -r[0] }.each do |n,r|
+	#o = r[0]
+	#r.map! { |v| v / o }
+	puts ('%50s' + (' %12.2f' * r.size)) % [n, *r]
+end
