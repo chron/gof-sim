@@ -2,6 +2,15 @@ class Array
 	def sum
 		inject(0) { |s,c| s + c }
 	end
+
+	def mean
+		sum.to_f / size
+	end
+	
+	def stdev
+    	m = mean
+    	Math.sqrt(map { |v| (v - m)**2 }.mean)
+	end
 end
 
 module GauntletOfFools
@@ -19,32 +28,44 @@ module GauntletOfFools
 			@card = card
 		end		
 
-		def unfinished!
-			@card.unfinished = true
-		end
-
 		def name
 			@card.name
 		end
 
 		def method_missing m, v=nil, &b
 			raise "block AND value provided" if v && b
-			@card.instance_variable_set("@#{m}", b || v)
+			@card[m] = b || v || true
 		end
 	end
 
 	class Deck
-		HOOKS = %w(at_start before_encounter after_encounter bonus_damage)
-		REPLACEMENT_HOOKS = %w(instead_of_treasure)
+		attr_reader :unfinished, :instant
 
-		attr_reader *HOOKS, *REPLACEMENT_HOOKS
-		attr_accessor :unfinished
+		def initialize
+			@data = {}
+		end
+
+		def [] element
+			@data[element]
+		end
+
+		def []= element, value
+			@data[element] = value
+		end
+
+		def unfinished?
+			self[:unfinished!]
+		end
+
+		def method_missing name, *args
+			@data[name] || super
+		end
 
 		def self.method_missing name, *args, &b
 			raise "CHECK THIS" unless args.empty? && b
 			new_card = self.new(name.to_s.capitalize.gsub(/_(\w)/){" #{$1.upcase}"})
 			CardDefiner.new(new_card).instance_eval(&b)
-			self.register(new_card) unless new_card.unfinished
+			self.register(new_card) unless new_card.unfinished?
 
 			new_card
 		end

@@ -1,6 +1,7 @@
 module GauntletOfFools
 	BRAGS = [:blindfold, :hangover, :one_leg, :one_arm, :no_breakfast, :juggling].freeze
-	
+	PERMANENT_EFFECTS = [:poison, :hangover].freeze
+
 	class Option < Struct.new(:hero, :weapon, :current_owner, :brags)
 		def inspect
 			"%s/%s+%p%s" % [hero.name, weapon.name, brags, current_owner ? " (#{current_owner})" : '']
@@ -18,6 +19,7 @@ module GauntletOfFools
 	class Player
 		attr_reader :name, :hero, :weapon, :brags
 		attr_accessor :wounds, :treasure, :bonus_attack, :bonus_dice, :bonus_defense, :hero_tokens, :weapon_tokens
+		attr_accessor :kill_next, :dodge_next, :temp_dice
 
 		def initialize name, hero, weapon, brags
 			@name = name
@@ -26,40 +28,89 @@ module GauntletOfFools
 			@hero = hero
 			@weapon = weapon
 
-			@hangover = false
+			@temp_dice = 0
+
 			@bonus_attack, @bonus_dice, @bonus_defense = 0, 0, 0
 			@hero_tokens, @weapon_tokens = hero.tokens, weapon.tokens
 
 			@kill_next, @dodge_next = false, false
 			@encounter_mods = []
 
-			brags.each { |b| add_brag(b) } # FIXME: probably do this inline
+			@current_effects, @next_turn_effects = [], []
 
-			at_start
+			brags.each { |b| add_brag(b) } # FIXME: probably do this inline
+		end
+
+		def next_turn flag
+			Logger.log '%s gains an effect: %s' % [@name, flag]
+			@next_turn_effects << flag
+		end
+
+		def begin_turn
+			@temp_dice = 0
+			@current_effects.delete_if { |e| !PERMANENT_EFFECTS.include?(e) }
+			@current_effects.concat(@next_turn_effects)
+			@next_turn_effects.clear
+		end
+
+		def effects
+			@current_effects
+		end
+
+		def gain effect
+			@current_effects << effect
+		end
+
+		def has? effect
+			@current_effects.include?(effect)
+		end
+
+		def clear_effect effect
+			@current_effects.delete_if { |e| effect == e }
+		end
+
+		def end_turn
+
 		end
 
 		def kill
+			Logger.log '%s will auto-kill.' % @name
 			@kill_next = true
 		end
 
 		def dodge
+			Logger.log '%s will dodge the next attack.' % @name
 			@dodge_next = true
 		end
 
+		def gain_temp_dice n
+			Logger.log '%s gains %i dice for the next roll.' % [@name, n]
+			@temp_dice += n
+		end
+
 		def spend_weapon_token
-			@weapon_tokens -= 1 if @weapon_tokens > 0
+			if @weapon_tokens > 0
+				@weapon_tokens -= 1
+				Logger.log '%s spends a weapon token (%i remaining).' % [@name, @weapon_tokens]
+				true
+			end
 		end
 
 		def spend_hero_token
-			@hero_tokens -= 1 if @hero_tokens > 0
+			if @hero_tokens > 0
+				@hero_tokens -= 1
+				Logger.log '%s spends a hero token (%i remaining).' % [@name, @hero_tokens]
+				true
+			end
 		end
 
 		def gain_treasure amount
 			@treasure += amount
-			Logger.log ("#{name} has #{amount > 0 ? 'gained' : 'lost'} #{amount} coin#{amount == 1 ? '' : 's'}.")
+			Logger.log ("#{name} has #{amount > 0 ? 'gained' : 'lost'} #{amount.abs} coin#{amount == 1 ? '' : 's'}.")
 		end
 
 		def wound amount
+			@wounds += amount
 			Logger.log ("#{name} recieves #{amount} wound#{amount == 1 ? '' : 's'}.")
 		end
 
@@ -70,28 +121,6 @@ module GauntletOfFools
 			Logger.log "%s is cured of %i wound%s" % [self.name, actual_heal, actual_heal == 1 ? '' : 's'] if actual_heal > 0
 		end
 
-		Deck::REPLACEMENT_HOOKS.each do |hook|
-			define_method(hook) do |*args|
-				[@hero,@weapon].each do |obj| 
-					proc = obj.send(hook)
-					if proc && r=proc[self, *args]
-						return r
-					end
-				end
-
-				return false
-			end
-		end
-
-		Deck::HOOKS.each do |hook|
-			define_method(hook) do |*args|
-				[@hero,@weapon].map do |obj| 
-					proc = obj.send(hook)
-					proc[self, *args] if proc
-				end.compact # can't tell where it's from?
-			end
-		end
-
 		def add_brag brag
 			raise "Unknown Brag" unless BRAGS.include?(brag)
 			raise "Duplicate Brag" if @brags.include?(brag)
@@ -100,14 +129,14 @@ module GauntletOfFools
 				when :no_breakfast then @wounds += 1
 				when :juggling then @bonus_attack -= 1; @weapon_tokens /= 2
 				when :one_leg then @bonus_defense -= 2
-				when :hangover then @bonus_dice -= 1; @bonus_defense -= 2; @hangover = true # check ??
+				when :hangover then @bonus_dice -= 1; @bonus_defense -= 2; @current_effects << :hangover
 			end
 
 			@brags << brag
 		end
 
 		def dead?
-			@wounds >= 4
+			@wounds >= 4 && !has?(:cannot_die)
 		end
 
 		def defense
@@ -115,84 +144,24 @@ module GauntletOfFools
 		end
 
 		def attack_dice
-			@weapon.dice + @bonus_dice
-		end
-
-		def fight encounter
-			if encounter.instead_of_combat
-				encounter.instead_of_combat[self]
-				@encounter_mods.clear # check this
-				after_encounter
-			elsif encounter.modifies_next_encounter
-				@encounter_mods << encounter.modifies_next_encounter
-			else
-				if @encounter_mods.size > 0
-					encounter = encounter.dup
-					@encounter_mods.each { |m| m[encounter] }
-					@encounter_mods.clear
-				end
-
-				before_encounter(encounter)
-
-				if @kill_next
-					Logger.log "%s kills %s." % [@name, encounter.name]
-					killed = true
-					@kill_next = false
-				else 
-					dice_result = roll(attack_dice)
-					modified_dice_result = dice_result.reject { |d| @brags.include?(:one_arm) && d <= 2 }
-
-					total_bonus = @bonus_attack + bonus_damage.sum
-
-					total_attack = @weapon.damage_calc ? @weapon.damage_calc[modified_dice_result, total_bonus] : modified_dice_result.inject(0) {|s,c| s + c } + total_bonus
-
-					Logger.log "%s attacks %s => %id6+%i = %p = %i" % [@name, encounter.name, attack_dice, total_bonus, dice_result, total_attack]
-					killed = total_attack >= encounter.defense
-				end
-
-				if @dodge_next
-					Logger.log "%s dodges." % [@name]
-					encounter_hits = false
-					@dodge_next = false
-				else
-					Logger.log "%s attacks for %i. %s defense is %i." % [encounter.name, encounter.attack, @name, defense]
-					encounter_hits = encounter.attack >= defense
-				end
-
-				if killed
-					Logger.log "%s has slain %s!" % [@name, encounter.name]
-
-					if instead_of_treasure(encounter)
-						Logger.log "%s uses a power instead of gaining treasure." % [@name] # FIXME
-					else
-						loot = encounter.treasure
-						loot -= 1 if @brags.include?(:blindfold) && !encounter_hits
-						loot = 0 if loot < 0
-
-						gain_treasure loot
-					end
-
-					if @hangover
-						@bonus_dice += 1
-						@bonus_defense += 2
-						@hangover = false
-
-						Logger.log "%s has recovered from his hangover!" % [@name]
-					end
-				else
-					Logger.log "%s does not defeat %s." % [@name, encounter.name]
-				end
-
-				if encounter_hits
-					wound encounter.damage
-				end
-
-				after_encounter
-			end
+			@weapon.dice + @bonus_dice + @temp_dice
 		end
 
 		def roll number
+			return [] if number <= 0
 			Array.new(number) { rand(6)+1 }
+		end
+
+		def minimum_damage
+			attack_dice + bonus_damage # doesn't include damage hooks
+		end
+
+		def maximum_damage
+			6 * attack_dice + bonus_damage
+		end
+
+		def average_damage
+			3.5 * attack_dice + bonus_damage
 		end
 	end
 end
