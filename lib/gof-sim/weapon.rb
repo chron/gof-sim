@@ -1,139 +1,83 @@
 module GauntletOfFools
-	class Weapon < Deck
-		attr_reader :name
-		attr_reader :bonus_damage, :damage_calc
+	class Weapon < GameObject
+		attr_reader :dice, :tokens
 		
-		def initialize name
-			super()
+		def initialize name, dice, tokens
+			super(name)
 
-			@name = name
-			self[:dice] = 4
-			self[:tokens] = 0
+			@dice, @tokens = dice, tokens
 		end
 
-		def to_s
-			name
-		end
-
-		def on_attach(hero)
-			# do nothing
-		end
-
-		axe {
-			dice 5
-			tokens 2
-			#Spend a token to once per fight, before rolling double your attack value, but zero it our for the following turn.
-
-			unfinished!
+		Weapon.new('Axe', 5, 2) {
+			hooks(:before_rolling) { |player,encounter| player.decide(:use_axe) && player.spend_weapon_token && player.gain(:double_attack) && player.next_turn(:zero_attack) }
 		}
 
-		bow {
-			dice 4
-			tokens 2
-			after_attack { |player,encounter| player.has? :killed_this_turn && player.spend_weapon_token && player.dodge }
+		Weapon.new('Bow', 4, 2) {
+			hooks(:after_attack) { |player,encounter| player.has? :killed_this_round && player.decide(:use_bow) && player.spend_weapon_token && player.dodge }
 		}
 
-		dagger {
-			dice 3
-			tokens 4
-			before_rolling { |player,encounter| player.spend_weapon_token && player.kill }
+		Weapon.new('Dagger', 3, 4) {
+			hooks(:before_rolling) { |player,encounter| player.decide(:use_dagger) && player.spend_weapon_token && player.kill }
 		}
 
-		deadly_fists {
-			dice 3
-			tokens 2
-			before_rolling { |player,encounter| player.spend_weapon_token && player.kill && player.dodge }
+		Weapon.new('Deadly Fists', 3, 2) {
+			hooks(:before_rolling) { |player,encounter| player.decide(:use_deadly_fists) && player.spend_weapon_token && player.kill && player.dodge }
 		}
 
-		demonic_blade {
-			dice 4
-			tokens 2 # CHECK THIS
-			before_rolling { |player,encounter| player.spend_weapon_token && player.gain_temp_dice(2) } # FIXME: multiples
+		Weapon.new('Demonic Blade', 4, 2) { # check number of tokens
+			hooks(:before_rolling) { |player,encounter| 
+			n = player.decide(:use_demonic_blade)
+			player.spend_weapon_token(n) && player.gain_temp_dice(2*n) } # FIXME: multiples
 		}
 
-		flaming_sword {
-			unfinished!
-		}
+		# Weapon.new('Flaming Sword', 0, 0)
 
-		holy_sword {
-			dice 5
-			tokens 2
-			# Spend a token before rolling, discard all Penalty tokens, and ignore your Boasts this turn.
-
-			unfinished!
-		}
+		# Weapon.new('holy_sword', 5, 2) # Spend a token before rolling, discard all Penalty tokens, and ignore your Boasts this turn.
 		
-		mace {
-			dice 5
-			# Spend a token after rolling, roll an extra Attack Dice.
+		#Weapon.new('Mace', 5, 0) { # check tokens
+		#	# Spend a token after rolling, roll an extra Attack Dice.
+		#}
 
-			unfinished!
-		}
-
-		morning_star {
-			dice 5
-			tokens 2
+		#Weapon.new('Morning Star', 5, 2) {
 			# Spend a token after rolling, re-roll all dice.
+		#}
 
-			unfinished!
+		Weapon.new('Sack of Loot', 3, 0) {
+			hooks(:bonus_damage) { |player,encounter| player.treasure }
+			hooks(:at_start) { |player| player.treasure += 1 }
 		}
 
-		sack_of_loot {
-			dice 3
-			bonus_damage { |player,encounter| player.treasure }
-			at_start { |player| player.treasure += 1 }
-		}
+		# Weapon.new('Scimitar', 4, 2) { # weapon token: after rolling, reroll 2 dice
 
-		scimitar {
-			dice 4
-			tokens 2
-			# weapon token: after rolling, reroll 2 dice
+		# Weapon.new('Spear', 0, 0) { # use 14 instead of your roll
 
-			unfinished!
-		}
-
-		spear {
-			# use 14 instead of your roll
-			unfinished!
-		}
-
-		spiked_shield {
-			dice 3
-			tokens 2
-			at_start { |player| player.bonus_defense += 1 }
-			before_rolling { |player,encounter| encounter.attack >= player.defense && player.spend_weapon_token && player.kill } # condition not quite right
+		Weapon.new('Spiked Shield', 3, 2) {
+			hooks(:at_start) { |player| player.bonus_defense += 1 }
+			hooks(:before_rolling) { |player,encounter| encounter.attack >= player.defense && player.spend_weapon_token && player.kill } # condition not quite right
 			# Spend a token after rolling, to Kill a Monster that Damaged you.
 		}
 
-		staff {
-			dice 3
-			tokens 4
-			# Spend a token before rolling, either +2 Attack Dice or +6 Defense this turn..
+		# Weapon.new('Staff', 3, 4) { # Spend a token before rolling, either +2 Attack Dice or +6 Defense this turn..
 
-			unfinished!
+		Weapon.new('Throwing Stars', 2, 20) { 
+			hooks(:before_rolling) { |player,encounter| 
+				n = player.decide(:use_throwing_stars)
+				player.spend_weapon_token(n) && player.gain_temp_dice(n)
+			}
 		}
 
-		throwing_stars {
-			dice 2
-			tokens 20
+		# Weapon.new('Wand', 0, 0)
 
-			# tokens add 1 dice
-			unfinished!
+		Weapon.new('Whip', 4, 2) {
+			hooks(:after_attack) { |player,encounter| !player.has?(:killed_this_round) && player.spend_weapon_token && player.dodge }
 		}
 
-		wand {
-			unfinished!
-		}
-
-		whip {
-			dice 4
-			tokens 2
-			after_attack { |player,encounter| !player.has?(:killed_this_turn) && player.spend_weapon_token && player.dodge }
-		}
-
-		cleaver { # PROMO CARD
-			dice 1
-			damage_calc { |rolls,bonuses| rolls.inject(0) { |total,d| total + (d * 4) } + bonuses }
-		}
+		# Weapon.new('Cleaver', 1, 0) { # PROMO CARD
+		#	hooks(:attack_calc) { |rolls,bonuses,factor| (rolls.inject(0) { |total,d| total + 4*d } + bonuses) * factor }
+		#	hooks(:hit_chance_calc) { |player,defense| # FIXME: DRY this a bit
+		#		d = Player::DISTRIBUTION[player.attack_dice].map { |k,v| [(4*k + player.bonus_attack) * player.attack_factor, v] }
+		#		d.inject(0) { |s,(k,v)| s + (k >= defense ? v : 0) }.to_f / d.transpose.last.sum
+		#	}
+		#}
 	end
 end

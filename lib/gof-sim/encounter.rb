@@ -1,209 +1,132 @@
 module GauntletOfFools
-	class Encounter < Deck
-		attr_accessor :name
-		
-		def initialize name
-			super()
+	class Encounter < GameObject		
+		attr_accessor :attack, :defense, :damage, :treasure
+		attr_reader :instant
 
-			self[:damage] = 1
-			self[:treasure] = 0
+		def initialize name, attack=0, defense=0, damage=0, treasure=0
+			super(name)
 
-			@name = name
-		end
-
-		def to_s
-			name
+			@attack, @defense, @damage, @treasure = attack, defense, damage, treasure
 		end
 
 		def display_name
-			name + (self[:attack] ? " (#{attack}/#{defense})" : '')
+			name + (self.attack > 0 ? " (#{attack}/#{defense})" : '')
 		end
 
 		def add_prefix prefix # FIXME: this is kind of dumb
 			@name = prefix + ' ' + @name
 		end
 
+		def instant!
+			@instant = true
+		end
 
-		banshee {
-			attack 23
-			defense 16
-			treasure 4
+		Encounter.new('Banshee', 23, 16, 1, 4) {
 			# damage = choose 1 wound or -3 def
 		}
 
-		behemoth {
-			attack 20
-			defense 21
-			treasure 4
+		Encounter.new('Behemoth', 20, 21, 1, 4) {
 			# You may pay weapon token to skip this fight. 
 		}
 
-		fire_elemental {
-			attack 18
-			defense 14
-			extra_treasure { |player| player.gain_treasure(player.defense / 3) }
+		Encounter.new('Fire Elemental', 18, 14, 1, 0) {
+			hooks(:extra_treasure) { |player| player.gain_treasure(player.defense / 3) }
 		}
 
-		gargoyle {
-			attack 13
-			defense 19
-			treasure 2
+		Encounter.new('Gargoyle', 13, 19, 1, 2)
+
+		Encounter.new('Giant Cockroach', 1, 12, 1, 1) {
+			hooks(:extra_treasure) { |player| player.bonus_defense -= 1 }
 		}
 
-		giant_cockroach {
-			attack 11
-			defense 12
-			treasure 1
-			extra_treasure { |player| player.bonus_defense -= 1 }
+		Encounter.new('Giant Scorpion', 19, 12, 2, 3) {
+			hooks(:extra_damage) { |player| player.gain :cannot_die }
 		}
 
-		giant_scorpion {
-			attack 19
-			defense 12
-			treasure 3
-			damage 2
-			extra_damage { |player| player.gain :cannot_die }
+		Encounter.new('Giant Toad', 14, 12, 1, 2) {
+			# and a one-time dice
 		}
 
-		giant_toad {
-			attack 14
-			defense 12
-			treasure 2 # and a one-time dice
+		Encounter.new('Giant Turtle', 9, 14, 1, 1)
+
+		Encounter.new('Gladiator', 15, 15, 1, 3) {
+			# bet up to 5, receieve double
 		}
 
-		giant_turtle {
-			attack 9
-			defense 14
-			treasure 1
+		Encounter.new('Goblin', 13, 10, 1, 2)
+
+		Encounter.new('Griffin', 11, 13, 1, 3) {
+			hooks(:extra_damage) { |player| player.gain_treasure -2}
 		}
 
-		gladiator {
-			attack 15
-			defense 15
-			treasure 3 # bet up to 5, receieve double
-		}
-
-		goblin {
-			attack 13
-			defense 10
-			treasure 2
-		}
-
-		griffin {
-			attack 11
-			defense 13
-			treasure 3
-			extra_damage { |player| player.gain_treasure -2}
-		}
-
-		guardian {
-			attack 10
-			defense 16
+		Encounter.new('Guardian', 10, 16, 1, 0) {
 			# treasure = Turn over an Encounter that only you get to use, if you want.
-			unfinished!
 		}
 
-		mercenary {
-			attack 18
-			defense 14
-			treasure 4
-			damage 2
+		Encounter.new('Mercenary', 18, 14, 2, 4) {
 			# you may pay 1 to skip this fight
 		}
 
-		minotaur {
-			attack 20
-			defense 14
-			treasure 4
+		Encounter.new('Minotaur', 20, 14, 1, 4)
+
+		Encounter.new('Mummy', 18, 14, 0, 3) {
+			hooks(:extra_damage) { |player| player.next_turn :take_double_damage }
 		}
 
-		mummy {
-			attack 18
-			defense 14
-			treasure 3
-			damage 0
-			extra_damage { |player,encounter| player.next_turn :take_double_damage }
+		Encounter.new('Ogre', 16, 13, 1, 3)
+
+		Encounter.new('Skelephant', 13, 8, 1, 2)
+
+		Encounter.new('Slime Monster', 22, 18, 1, 4) {
+			hooks(:extra_damage) { |player| player.bonus_dice -= 1 }
 		}
 
-		ogre {
-			attack 16
-			defense 13
-			treasure 3
-		}
-
-		skelephant {
-			attack 13
-			defense 8
-			treasure 2
-		}
-
-		slime_monster {
-			attack 22
-			defense 18
-			treasure 4
-			extra_damage { |player| player.bonus_dice -= 1 }
-		}
-
-		troll {
-			attack 20
-			defense 15
-			treasure 4
+		Encounter.new('Troll', 20, 15, 1, 4) {
 			# If you don't Kill this, fight it a 2nd time.
 		}
 
-		vampire {
-			attack 21
-			defense 18
-			treasure 3
-			damage 0
-			extra_damage { |player| player.wound(player.wounds <= 2 ? 2 : 1) } # check logic with doubling
+		Encounter.new('Vampire', 21, 18, 0, 3) {
+			hooks(:extra_damage) { |player| player.wound(player.wounds <= 2 ? 2 : 1) } # check logic with doubling
 		}
 
-		witch {
-			attack 15
-			defense 10
-			treasure 2
-			extra_damage { |player| player.bonus_defense -= 3 }
+		Encounter.new('Witch', 15, 10, 1, 2) {
+			hooks(:extra_damage) { |player| player.bonus_defense -= 3 }
 		}
 
-		extra_scary {
+		Encounter.new('Extra Scary') {
 			instant!
-			unfinished!
-			modifies_next_encounter { |encounter| encounter.add_prefix(name); encounter[:attack] += 3 }
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.attack += 3 }
 		}
 
-		extra_bitey {
+		Encounter.new('Extra Bitey') {
 			instant!
-			unfinished!
-			modifies_next_encounter { |encounter| encounter.add_prefix(name); encounter[:damage] *= 2 } # FIXME: use take_double_damage
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.damage *= 2 } # FIXME: use take_double_damage
 		}
 
-		extra_tough {
+		Encounter.new('Extra Tough') {
 			instant!
-			unfinished!
-			modifies_next_encounter { |encounter| encounter.add_prefix(name); encounter[:defense] += 3 }
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.defense += 3 }
 		}
 
-		extra_wealthy {
+		Encounter.new('Extra Wealthy') {
 			instant!
-			unfinished!
-			modifies_next_encounter { |encounter| encounter.add_prefix(name); encounter[:treasure] += 3 } # check this value
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.treasure += 3 } # check this value
 		}
 
-		cache {
-			instead_of_combat { |player| player.gain_treasure 2 }
+		Encounter.new('Cache') {
+			hooks(:instead_of_combat) { |player| player.gain_treasure 2 }
 		}
 
-		healing_pool {
-			instead_of_combat { |player| player.heal 1 } # penalties?
+		Encounter.new('Healing Pool') {
+			hooks(:instead_of_combat) { |player| player.heal 1 } # penalties?
 		}
 
-		magic_pool {
-			instead_of_combat { |player| player.weapon_tokens += 1 } # possible to choose hero token?
+		Encounter.new('Magic Pool') {
+			hooks(:instead_of_combat) { |player| player.weapon_tokens += 1; player.hero_tokens += 1 } # should be a choice
 		}
 
-		spear_trap { # TODO: THIS CAN BE DODGED
-			instead_of_combat { |player| player.wound 1 }
+		Encounter.new('Spear Trap') { # TODO: THIS CAN BE DODGED
+			hooks(:instead_of_combat) { |player| player.wound 1 }
 		}
 
 =begin
@@ -239,7 +162,7 @@ Gold Vein
 # 		| Unicorn 		| Minotaur 		| Giant 			| Troll			| Danc. Sword |
 # 		| Extra Wealthy | Brass Golem 	| Extra Scary 	| Will-o-wisp	| Banshee |
 # 		| Goblin 		| Giant Turtle 	| Spear Trap 	| Magic Pool	| Bee Swarm |
-# 		| Giant Cockr. 	| Griffin | Wolf	| Pixie 		| Slime Monster	|
+# 		| Giant Cockr. 	| Griffin 		| Wolf			| Pixie 		| Slime Monster	|
 # 		| Behemoth 		| Fire Elemental	| Gargoyle 		| Gold Vein		| Cache |
 	end
 end

@@ -15,59 +15,50 @@ end
 
 module GauntletOfFools
 	class Logger
+		@logging = true
+
+		def self.logging= v
+			@logging = v
+		end
+
 		def self.log str
+			return unless @logging
+
 			@file ||= File.open('log.txt', ?w)
 			@file.puts str
 
-			#puts st
+			true
 		end
 	end
 
-	class CardDefiner < BasicObject
-		def initialize card
-			@card = card
-		end		
-
-		def name
-			@card.name
-		end
-
-		def method_missing m, v=nil, &b
-			raise "block AND value provided" if v && b
-			@card[m] = b || v || true
-		end
-	end
-
-	class Deck
+	class GameObject
+		attr_accessor :name
 		attr_reader :unfinished, :instant
 
-		def initialize
-			@data = {}
+		def initialize name, &b
+			@name = name
+			@hooks = {}
+
+			instance_eval(&b) if b
+
+			self.class.register(self)
 		end
 
-		def [] element
-			@data[element]
+		def to_s
+			@name
 		end
 
-		def []= element, value
-			@data[element] = value
+		def hooks hook_name, &b
+			@hooks[hook_name] = b
 		end
 
-		def unfinished?
-			self[:unfinished!]
+		def call_hook hook_name, *args
+			h = @hooks[hook_name] 
+			h[*args] if h
 		end
 
-		def method_missing name, *args
-			@data[name] || super
-		end
-
-		def self.method_missing name, *args, &b
-			raise "CHECK THIS" unless args.empty? && b
-			new_card = self.new(name.to_s.capitalize.gsub(/_(\w)/){" #{$1.upcase}"})
-			CardDefiner.new(new_card).instance_eval(&b)
-			self.register(new_card) unless new_card.unfinished?
-
-			new_card
+		def hooks? hook_name
+			@hooks.include?(hook_name)
 		end
 
 		def self.register item
@@ -79,8 +70,8 @@ module GauntletOfFools
 			@items
 		end
 
-		def * num
-			(num-1).times { self.class.register(self) }
+		def self.[] name
+			@items.find { |i| i.name == name }
 		end
 	end
 end
