@@ -25,7 +25,6 @@ GauntletOfFools::EncounterPhase.test_encounter(e).run(p)
 exit
 =end
 
-=begin
 def sim(trials, *opts)
 	results = Hash.new { |h,k| h[k] = [] }
 
@@ -53,7 +52,7 @@ players.cycle do |p|
 
 	puts '%s choosing: ' % [p]
 	choices = b.options.map { |o| o.current_owner ? o.with_any_new_brag : o.copy }.flatten
-	rated_choices = sim(100, *choices) #choices.map { |c| [c, 10]}.sort_by { |k,v| -v }
+	rated_choices = sim(4000 / choices.size, *choices) #choices.map { |c| [c, 10]}.sort_by { |k,v| -v }
 
 	rated_choices.sort_by { |k,v| -v }.each_with_index { |(o,v),i| puts '%2i %5.2f %-p' % [i, v, o] }
 	puts
@@ -76,37 +75,31 @@ e.run(*players)
 players.sort_by { |p| -p.treasure }.each do |p|
 	puts '%i %s' % [p.treasure, p.name, p]
 end
-=end
 
-trials = 200
-results = Hash.new { |h,k| h[k] = Hash.new { |h2,k2| h2[k2] = []}}
-brag_opts = [[]] #, *GauntletOfFools::BRAGS]
+=begin
+total_trials = 5000
+results = Hash.new { |h,k| h[k] = [] }
 
 combinations = GauntletOfFools::Hero.all.product(GauntletOfFools::Weapon.all).map do |h,w| # .select { |w| w.name == 'Axe'}
 	n = "#{h.name}#{w.name.tr(' ','')}"
 	opt = GauntletOfFools::Option.new(h, w, n, [])
 end
+trials = (total_trials.to_f / combinations.size).ceil
+
+puts "#{combinations.size} combinations, #{trials} trials per combination."
 
 trials.times do |t|
-	brag_opts.each do |b|
-		players = combinations.map { |opt| opt.brags = [*b]; opt.to_player }
-		#GauntletOfFools::EncounterPhase.new.run(*players)
-		#players.each { |p| results["#{p.hero}/#{p.weapon}"][b] << p.treasure }
-
-		players.each do |p|
-			GauntletOfFools::EncounterPhase.new.run(p)
-			results["#{p.hero}/#{p.weapon}"][b] << p.treasure
-		end
+	combinations.each do |opt|
+		p = opt.to_player
+		GauntletOfFools::EncounterPhase.new.run(p)
+		results["#{p.hero}/#{p.weapon}"] << [p.treasure, p.age]
 	end
 end
 
-puts ('%50s' + (' %12s' * brag_opts.size)) % ['', *brag_opts]
+results = results.to_a.map { |n,v| v1,v2 = v.transpose; [n, v1.mean, v1.stdev, v2.mean, v2.stdev] }
 
-# averages
-results = results.to_a.map { |n,b| [n, b.map { |k,v| [v.mean, v.stdev]}] }
-
-results.sort_by { |n,r| -r[0][0] }.each do |n,r|
-	#o = r[0]
-	#r.map! { |v| v / o }
-	puts ('%50s' + (' %12.2f %12.2f' * r.size)) % [n, *r.flatten]
+puts '%50s %12s %12s %12s %12s' % ['', '$ mean', '$ stdev', 'age mean', 'age stdev']
+results.sort_by { |a| -a[1] }.each do |a|
+	puts ('%50s %12.2f %12.2f %12.2f %12.2f') % a
 end
+=end

@@ -13,9 +13,9 @@ module GauntletOfFools
 			hooks(:after_encounter) { |player, encounter| player.has?(:killed_this_round) && player.has?(:dodged_this_round) && player.wounds > 0 && player.spend_hero_token && player.heal(1) }
 		}
 
-		#Hero.new('Armorer', 10, 2) {
-		#	hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.bonus_defense += 3 }
-		#}
+		Hero.new('Armorer', 13, 2) {
+			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.bonus_defense += 3 }
+		}
 
 		#Hero.new('Artificer', 14, 2) { # check defense
 		#	hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.bonus_dice += 1 }
@@ -35,7 +35,8 @@ module GauntletOfFools
 
 		# Hero.new('monk', 14, 4)
 
-		# Hero.new('necromancer', 0, 0)
+		# Hero.new('Necromancer', 16, 2)
+			# Has all abilities of heroes killed on previous turns
 
 		Hero.new('Ninja', 17, 0) {
 			hooks(:at_start) { |player| player.weapon_tokens *= 2 }
@@ -58,7 +59,6 @@ module GauntletOfFools
 		Hero.new('Trapper', 16, 2) {
 			hooks(:before_rolling) { |player, encounter| player.decide(:use_trapper) && player.spend_hero_token && player.gain(:trapper_bounty) } # use once per fight but lasts whole turn
 			hooks(:extra_treasure) { |player, encounter| player.has?(:trapper_bounty) && player.gain_treasure(2) }
-			# Spend a token before rolling, once per fight, Treasures have an extra 2 Gold for you this turn.
 		}
 
 
@@ -68,13 +68,13 @@ module GauntletOfFools
 		#	unfinished!
 		#}
 
-		# Hero.new('wizard', 15, 2) {
-		#	#  Spend a token before rolling, skip an Encounter completely, ignoring its text.
-		#}
+		Hero.new('Wizard', 15, 2) {
+			hooks(:before_encounter) { |player, encounter| player.decide(:use_wizard) && player.spend_hero_token && player.gain(:skip_encounter) }
+		}
 
-		#Hero.new('zealot', 15, 2) {
-		#	#Spend a token before rolling. Kill a Monster, and your Defense is 0 this turn.
-		#}
+		Hero.new('Zealot', 15, 2) {
+			hooks(:before_rolling) { |player, encounter| player.decide(:use_zealot) && player.spend_hero_token && player.gain(:kill_next) && player.gain(:zero_defense)}
+		}
 
 		#Hero.new('zombie', 13, 2) {
 		#	# Class Ability: Spend a token if another player is alive to play a turn even though you are dead.

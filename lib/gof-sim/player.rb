@@ -25,24 +25,21 @@ module GauntletOfFools
 	end
 
 	class Player
-		attr_reader :name, :hero, :weapon, :brags
+		attr_reader :name, :hero, :weapon, :brags, :age
 		attr_writer :bonus_attack
 		attr_accessor :wounds, :treasure, :bonus_dice, :bonus_defense, :hero_tokens, :weapon_tokens
-		attr_accessor :kill_next, :dodge_next, :temp_dice, :current_encounter
+		attr_accessor :temp_dice, :current_encounter
 
 		DISTRIBUTION = Hash.new do |h,dice|
-			if dice <= 0
-				r = {}
-			elsif dice == 1
-				r = Hash[*(1..6).map { |v| [v, 1] }.flatten]
+			h[dice] = if dice <= 0
+				{0 => 1}
 			else
-				o = DISTRIBUTION[dice-1]
 				r = Hash.new(0)
-				o.each do |value,occur|
+				DISTRIBUTION[dice-1].each do |value,occur|
 					(1..6).each { |v| r[value+v] += occur }
 				end
+				r
 			end
-			h[dice] = r
 		end
 
 		CHANCE_TO_HIT = Hash.new do |h,(dice,attack,factor,defense)|
@@ -60,11 +57,11 @@ module GauntletOfFools
 			@ai = BasicAI.new(self)
 
 			@wounds, @treasure = 0, 0
+			@age = 0
 			@temp_dice = 0
 			@bonus_attack, @bonus_dice, @bonus_defense = 0, 0, 0
 			@hero_tokens, @weapon_tokens = hero.tokens, weapon.tokens
 
-			@kill_next, @dodge_next = false, false
 			@current_effects, @next_turn_effects = [], []
 
 			brags.each { |b| add_brag(b) }
@@ -80,11 +77,12 @@ module GauntletOfFools
 		end
 
 		def chance_to_hit defense
+			return 1.0 if has? :kill_next
 			CHANCE_TO_HIT[[attack_dice, bonus_attack, attack_factor, defense]]
 		end
 
-		def decide d
-			@ai.decide d, @current_encounter
+		def decide d, *args
+			@ai.decide d, @current_encounter, *args
 		end
 
 		def next_turn effect
@@ -94,6 +92,7 @@ module GauntletOfFools
 
 		def begin_turn
 			@temp_dice = 0
+			@age += 1
 			@current_effects.delete_if { |e| !PERMANENT_EFFECTS.include?(e) }
 			@next_turn_effects.each { |e| gain e }
 			@next_turn_effects.clear
@@ -116,23 +115,13 @@ module GauntletOfFools
 			@current_effects.delete_if { |e| effect == e }
 		end
 
-		def kill
-			#Logger.log '%s will auto-kill.' % @name
-			@kill_next = true
-		end
-
-		def dodge
-			#Logger.log '%s will dodge the next attack.' % @name
-			@dodge_next = true
-		end
-
 		def gain_temp_dice n
 			Logger.log '%s gains %i dice for the next roll.' % [@name, n]
 			@temp_dice += n
 		end
 
 		def spend_weapon_token n=1 # currently all or nothing
-			return false if n==0
+			return false if n <= 0
 			return false if has? :no_weapon_tokens
 
 			if @weapon_tokens >= n
@@ -143,7 +132,7 @@ module GauntletOfFools
 		end
 
 		def spend_hero_token n=1
-			return false if n==0
+			return false if n <= 0
 
 			if @hero_tokens >= n
 				@hero_tokens -= n
@@ -187,6 +176,7 @@ module GauntletOfFools
 		end
 
 		def defense
+			return 0 if has? :zero_defense
 			@hero.defense + @bonus_defense
 		end
 
@@ -208,7 +198,19 @@ module GauntletOfFools
 
 		def roll number
 			return [] if number <= 0
-			Array.new(number) { rand(6)+1 }
+			r = Array.new(number) { rand(6)+1 }
+			Logger.log '%s rolls %i dice, resulting in => %p => %i' % [@name, number, r, r.sum]
+			r
+		end
+
+		def calculate_attack dice
+			modified_dice_result = dice.reject { |d| brags.include?(:one_arm) && d <= 2 }
+
+			if @weapon.hooks?(:attack_calc)
+				@weapon.call_hook(:attack_calc, modified_dice_result, bonus_attack, attack_factor)
+			else
+				(modified_dice_result.sum + bonus_attack) * attack_factor
+			end
 		end
 	end
 end

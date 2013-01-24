@@ -6,11 +6,11 @@ module GauntletOfFools
 			@encounter = nil
 		end
 
-		def decide decision, encounter
+		def decide decision, encounter, *args
 			PREFIXES.each do |p| 
 				if respond_to?(m = p + '_' + decision.to_s)
 					@encounter = encounter
-					return send(m)
+					return send(m, *args)
 				end
 			end
 
@@ -29,12 +29,25 @@ module GauntletOfFools
 			@player.chance_to_hit(@encounter.defense)
 		end
 
+		# FIXME: need a less hax way to simulate adding dice
+		def kill_chance_with_more_dice n
+			@player.temp_dice += n
+			prob = @player.chance_to_hit(@encounter.defense)
+			@player.temp_dice -= n
+
+			prob
+		end
+
 		def getting_hit
-			@encounter.attack >= @player.defense
+			@encounter.attack >= @player.defense && !@player.has?(:dodge_next)
 		end
 
 		def severe_damage
 			@encounter.damage > 1 || @encounter.hooks?(:extra_damage) # FIXME: how to evaluate actual extra damage done
+		end
+
+		def expected_value
+			kill_chance * @encounter.treasure # FIXME: extra treasure
 		end
 
 		# Hero decisions
@@ -48,6 +61,14 @@ module GauntletOfFools
 
 		def decide_whether_to_use_trapper
 			about_to_die? || kill_chance > 0.8
+		end
+
+		def decide_whether_to_use_wizard # fixme: work with non_combat encounters
+			(getting_hit && severe_damage) || (getting_hit && kill_chance < 0.6) || kill_chance < 0.35
+		end
+
+		def decide_whether_to_use_zealot
+			about_to_die? || (getting_hit && kill_chance < 0.5)
 		end
 
 		# Weapon decisions
@@ -65,19 +86,50 @@ module GauntletOfFools
 
 		def decide_whether_to_use_axe
 			return false if @player.has?(:zero_attack)
-			about_to_die? || kill_chance <= 0.5 || (really_needs_a_kill && kill_chance < 0.8)
+			about_to_die? || kill_chance <= 0.8 || (really_needs_a_kill && kill_chance < 0.9)
+		end
+
+		def decide_whether_to_use_morning_star rolls
+			#return false if @player.has?(:zero_attack)
+			return false if @player.calculate_attack(rolls) >= @encounter.defense
+
+			# FIXME: hmm
+			d = rolls.size - @player.attack_dice
+			raise "what" if d < 0
+
+			kill_chance_with_more_dice(d) > 0.8
+		end
+
+		def decide_whether_to_use_scimitar rolls
+			return false if @player.calculate_attack(rolls) >= @encounter.defense
+			return @player.calculate_attack((rolls.sort[2..-1] || [])+[3,4]) >= @encounter.defense # average of 2 dice, this is dumb
+		end
+
+		def decide_how_many_times_to_use_mace rolls
+			return 0 if @player.has?(:zero_attack)
+			return @player.weapon_tokens if about_to_die?
+
+			current_attack = @player.calculate_attack(rolls)
+
+			diff = @encounter.defense - current_attack
+
+			return 0 if diff <= 0
+
+			dice_needed = (diff / 3.5 ).ceil # FIXME
+
+			if dice_needed <= @player.weapon_tokens
+				dice_needed
+			else
+				0
+			end
 		end
 
 		def decide_how_many_times_to_use_throwing_stars
 			return 0 if @player.has?(:zero_attack)
 			return @player.weapon_tokens if about_to_die?
 
-			# FIXME: need a less hax way to simulate adding dice
-			0.upto([@player.weapon_tokens, 5].min) do |v| 
-				@player.temp_dice += v
-				prob = @player.chance_to_hit(@encounter.defense)
-				@player.temp_dice -= v
-				return v if prob >= 0.8
+			0.upto(@player.weapon_tokens) do |v| 
+				return v if kill_chance_with_more_dice(v) >= 0.75
 			end
 
 			return 0
@@ -87,12 +139,8 @@ module GauntletOfFools
 			return 0 if @player.has?(:zero_attack)
 			return @player.weapon_tokens if about_to_die?
 
-			# FIXME: need a less hax way to simulate adding dice
-			0.upto([@player.weapon_tokens, 5].min) do |v| 
-				@player.temp_dice += 2*v
-				prob = @player.chance_to_hit(@encounter.defense)
-				@player.temp_dice -= 2*v
-				return v if prob >= 0.8
+			0.upto(@player.weapon_tokens) do |v| 
+				return v if kill_chance_with_more_dice(2*v) >= 0.75
 			end
 
 			return 0

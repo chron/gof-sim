@@ -9,6 +9,10 @@ module GauntletOfFools
 			@attack, @defense, @damage, @treasure = attack, defense, damage, treasure
 		end
 
+		def non_combat?
+			@attack == 0
+		end
+
 		def display_name
 			name + (self.attack > 0 ? " (#{attack}/#{defense})" : '')
 		end
@@ -35,7 +39,7 @@ module GauntletOfFools
 
 		Encounter.new('Gargoyle', 13, 19, 1, 2)
 
-		Encounter.new('Giant Cockroach', 1, 12, 1, 1) {
+		Encounter.new('Giant Cockroach', 11, 12, 1, 1) {
 			hooks(:extra_treasure) { |player| player.bonus_defense -= 1 }
 		}
 
