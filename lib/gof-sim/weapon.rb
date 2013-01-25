@@ -24,10 +24,11 @@ module GauntletOfFools
 			hooks(:before_rolling) { |player,encounter| player.decide(:use_deadly_fists) && player.spend_weapon_token && player.gain(:kill_next) && player.gain(:dodge_next) }
 		}
 
-		Weapon.new('Demonic Blade', 4, 2) { # check number of tokens
+		Weapon.new('Demonic Blade', 4, 0) {
+			hooks(:extra_treasure) { |player,encounter| player.gain_weapon_token }
 			hooks(:before_rolling) { |player,encounter| 
 			n = player.decide(:use_demonic_blade)
-			player.spend_weapon_token(n) && player.gain_temp_dice(2*n) } # FIXME: multiples
+			player.spend_weapon_token(n) && player.gain_temp(:dice, 2*n) } # FIXME: multiples
 		}
 
 		# Weapon.new('Flaming Sword', 0, 0)
@@ -48,7 +49,7 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Sack of Loot', 3, 0) {
-			hooks(:bonus_damage) { |player,encounter| player.treasure }
+			hooks(:bonus_attack) { |player,encounter| player.treasure }
 			hooks(:at_start) { |player| player.gain_treasure(1) }
 		}
 
@@ -62,20 +63,29 @@ module GauntletOfFools
 			}
 		}
 
-		# Weapon.new('Spear', 0, 0) { # use 14 instead of your roll
+		Weapon.new('Spear', 4, 2) { # not sure on dice or tokens
+			hooks(:after_rolling) { |player, encounter, rolls|
+				player.decide(:use_spear, rolls) && player.spend_weapon_token && [14] # use 14 as your roll
+			}
+		}
 
 		Weapon.new('Spiked Shield', 3, 2) {
-			hooks(:at_start) { |player| player.bonus_defense += 1 }
-			hooks(:before_rolling) { |player,encounter| encounter.attack >= player.defense && player.spend_weapon_token && player.gain(:kill_next) } # condition not quite right
+			hooks(:at_start) { |player| player.gain_bonus(:defense, 1) }
+			hooks(:before_rolling) { |player, encounter| encounter.attack >= player.defense && player.spend_weapon_token && player.gain(:kill_next) } # condition not quite right
 			# Spend a token after rolling, to Kill a Monster that Damaged you.
 		}
 
-		# Weapon.new('Staff', 3, 4) { # Spend a token before rolling, either +2 Attack Dice or +6 Defense this turn..
+		Weapon.new('Staff', 3, 4) { # Spend a token before rolling, either +2 Attack Dice or +6 Defense this turn..
+			hooks(:before_rolling) { |player, encounter|
+				n1, n2 = player.decide(:use_staff)
+				(n1 || n2) && player.spend_weapon_token(n1+n2) && player.gain_temp(:dice,2*n1) && player.gain_temp(:defense, 6*n2)
+			}
+		}
 
 		Weapon.new('Throwing Stars', 2, 20) { 
 			hooks(:before_rolling) { |player,encounter| 
 				n = player.decide(:use_throwing_stars)
-				player.spend_weapon_token(n) && player.gain_temp_dice(n)
+				player.spend_weapon_token(n) && player.gain_temp(:dice, n)
 			}
 		}
 

@@ -29,13 +29,8 @@ module GauntletOfFools
 			@player.chance_to_hit(@encounter.defense)
 		end
 
-		# FIXME: need a less hax way to simulate adding dice
 		def kill_chance_with_more_dice n
-			@player.temp_dice += n
-			prob = @player.chance_to_hit(@encounter.defense)
-			@player.temp_dice -= n
-
-			prob
+			@player.chance_to_hit(@encounter.defense, n)
 		end
 
 		def getting_hit
@@ -77,7 +72,7 @@ module GauntletOfFools
 		end
 
 		def decide_whether_to_use_deadly_fists
-			(kill_chance < 0.7 && getting_hit) || really_needs_a_kill
+			(kill_chance < 0.9 && about_to_die?) || (kill_chance < 0.7 && getting_hit) || really_needs_a_kill
 		end
 
 		def decide_whether_to_use_bow
@@ -98,6 +93,10 @@ module GauntletOfFools
 			raise "what" if d < 0
 
 			kill_chance_with_more_dice(d) > 0.8
+		end
+
+		def decide_whether_to_use_spear rolls
+			@player.calculate_attack(rolls) < @encounter.defense && @player.calculate_attack([14]) >= @encounter.defense 
 		end
 
 		def decide_whether_to_use_scimitar rolls
@@ -144,6 +143,20 @@ module GauntletOfFools
 			end
 
 			return 0
+		end
+
+		
+		def decide_how_many_times_to_use_staff
+			defense_uses = ((@encounter.attack - @player.defense).to_f / 6).ceil
+			defense_uses = 0 if defense_uses < 0 || defense_uses > @player.weapon_tokens || (defense_uses > 1 && !severe_damage)
+
+			remaining_tokens = @player.weapon_tokens - defense_uses
+
+			attack_uses = (0..remaining_tokens).find do |v| 
+				kill_chance_with_more_dice(2*v) >= 0.75
+			end 
+
+			[attack_uses || 0, defense_uses]
 		end
 	end
 end

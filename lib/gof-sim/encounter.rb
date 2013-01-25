@@ -33,6 +33,10 @@ module GauntletOfFools
 			# You may pay weapon token to skip this fight. 
 		}
 
+		Encounter.new('Dancing Sword', 21, 8, 1, 3) {
+			hooks(:extra_treasure) { |player| player.bonus_attack += 1 }
+		}
+
 		Encounter.new('Fire Elemental', 18, 14, 1, 0) {
 			hooks(:extra_treasure) { |player| player.gain_treasure(player.defense / 3) }
 		}
@@ -90,7 +94,7 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Vampire', 21, 18, 0, 3) {
-			hooks(:extra_damage) { |player| player.wound(player.wounds <= 2 ? 2 : 1) } # check logic with doubling
+			hooks(:extra_damage) { |player| player.wound(player.wounds <= 2 ? 2 : 1) }
 		}
 
 		Encounter.new('Witch', 15, 10, 1, 2) {
@@ -126,7 +130,7 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Magic Pool') {
-			hooks(:instead_of_combat) { |player| player.weapon_tokens += 1; player.hero_tokens += 1 } # should be a choice
+			hooks(:instead_of_combat) { |player| player.gain_weapon_token; player.hero_tokens += 1 } # should be a choice
 		}
 
 		Encounter.new('Spear Trap') { # TODO: THIS CAN BE DODGED

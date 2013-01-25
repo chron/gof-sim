@@ -1,10 +1,9 @@
 module GauntletOfFools
-	BRAGS = [:blindfold, :hangover, :one_leg, :one_arm, :no_breakfast, :juggling].freeze
-	PERMANENT_EFFECTS = [:poison, :hangover].freeze
+	PERMANENT_EFFECTS = [:poison, :hangover, :blindfolded].freeze
 
-	class Option < Struct.new(:hero, :weapon, :current_owner, :brags, :parent_opt)
+	class Option < Struct.new(:hero, :weapons, :current_owner, :brags, :parent_opt)
 		def inspect
-			"%s/%s+%p%s" % [hero.name, weapon.name, brags, current_owner ? " (#{current_owner})" : '']
+			"%s/%s+%p%s" % [hero.name, weapons.map(&:name)*',', brags, current_owner ? " (#{current_owner})" : '']
 		end
 
 		def is_assigned?
@@ -12,23 +11,31 @@ module GauntletOfFools
 		end
 
 		def to_player new_name=nil
-			Player.new(new_name || current_owner, hero, weapon, brags)
+			Player.new(new_name || current_owner, hero, weapons, brags)
 		end
 
 		def copy
-			Option.new(hero, weapon, current_owner, brags, self)
+			Option.new(hero, weapons, current_owner, brags, self)
 		end
 
 		def with_any_new_brag
-			(BRAGS - brags).map { |b| Option.new(hero, weapon, current_owner, brags + [b], self)}
+			(BRAGS - brags).map { |b| Option.new(hero, weapons, current_owner, brags + [b], self)}
 		end
 	end
 
 	class Player
-		attr_reader :name, :hero, :weapon, :brags, :age
+		attr_reader :name, :hero, :weapons, :brags, :age
 		attr_writer :bonus_attack
-		attr_accessor :wounds, :treasure, :bonus_dice, :bonus_defense, :hero_tokens, :weapon_tokens
-		attr_accessor :temp_dice, :current_encounter
+		attr_accessor :wounds, :treasure, :bonus_dice, :bonus_defense, :hero_tokens
+		attr_accessor :current_encounter
+
+		def weapon_tokens # FIXME: temporary
+			@weapon_tokens[0]
+		end
+
+		def weapon_tokens= v
+			@weapon_tokens[0] = v
+		end
 
 		DISTRIBUTION = Hash.new do |h,dice|
 			h[dice] = if dice <= 0
@@ -48,27 +55,30 @@ module GauntletOfFools
 			h[[dice,attack,factor,defense]] = hits.empty? ? 0 : (hits.transpose.last.sum.to_f / d.transpose.last.sum)
 		end
 
-		def initialize name, hero, weapon, brags
+		def initialize name, hero, weapons, brags=[]
 			@name = name
-			@brags = []
+			@brags = brags
 			@hero = hero
-			@weapon = weapon
+			@weapons = [*weapons]
 
 			@ai = BasicAI.new(self)
 
-			@wounds, @treasure = 0, 0
-			@age = 0
-			@temp_dice = 0
-			@bonus_attack, @bonus_dice, @bonus_defense = 0, 0, 0
-			@hero_tokens, @weapon_tokens = hero.tokens, weapon.tokens
-
+			@wounds, @treasure, @age = 0, 0, 0
+			
 			@current_effects, @next_turn_effects = [], []
+			@tokens = Hash.new { |h,k| h[k] = [0, 0]}
+			@temp_tokens = Hash.new(0)
 
-			brags.each { |b| add_brag(b) }
+			@hero_tokens = hero.tokens
+			@weapon_tokens = weapons.map(&:tokens)
+		end
+
+		def run_hook hook, *data
+			[*@brags, @hero, *@weapons].map { |obj| obj.call_hook(hook, self, current_encounter, *data) }.compact
 		end
 
 		def to_s
-			s = "#{@name} (#{@hero.name}/#{@weapon.name})"
+			s = "#{@name} (#{@hero.name}/#{@weapons*','})"
 			if @brags.size > 0
 				s += ' + ' + (@brags * ',')
 			end
@@ -76,9 +86,9 @@ module GauntletOfFools
 			s
 		end
 
-		def chance_to_hit defense
+		def chance_to_hit defense, bonus_dice=0 # for simulation purposes
 			return 1.0 if has? :kill_next
-			CHANCE_TO_HIT[[attack_dice, bonus_attack, attack_factor, defense]]
+			CHANCE_TO_HIT[[attack_dice+bonus_dice, bonus_attack, attack_factor, defense]]
 		end
 
 		def decide d, *args
@@ -91,7 +101,7 @@ module GauntletOfFools
 		end
 
 		def begin_turn
-			@temp_dice = 0
+			@temp_tokens.each_key { |k| @temp_tokens[k] = 0 }
 			@age += 1
 			@current_effects.delete_if { |e| !PERMANENT_EFFECTS.include?(e) }
 			@next_turn_effects.each { |e| gain e }
@@ -115,18 +125,20 @@ module GauntletOfFools
 			@current_effects.delete_if { |e| effect == e }
 		end
 
-		def gain_temp_dice n
-			Logger.log '%s gains %i dice for the next roll.' % [@name, n]
-			@temp_dice += n
+		def gain_weapon_token n=1
+			@weapon_tokens[0] += n # FIXME: player's choice sometimes
+			Logger.log '%s gains %s weapon token%s (%p remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens]
+			true
 		end
 
+		# FIXME: needs to be from the specific weapon
 		def spend_weapon_token n=1 # currently all or nothing
 			return false if n <= 0
 			return false if has? :no_weapon_tokens
 
-			if @weapon_tokens >= n
-				@weapon_tokens -= n
-				Logger.log '%s spends %s weapon token%s (%i remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens]
+			if @weapon_tokens[0] >= n
+				@weapon_tokens[0] -= n
+				Logger.log '%s spends %s weapon token%s (%p remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens]
 				true
 			end
 		end
@@ -157,37 +169,43 @@ module GauntletOfFools
 			@wounds -= actual_heal
 		end
 
-		def add_brag brag
-			raise "Unknown Brag" unless BRAGS.include?(brag)
-			raise "Duplicate Brag" if @brags.include?(brag)
-
-			case brag
-				when :no_breakfast then @wounds += 1
-				when :juggling then @bonus_attack -= 1; @weapon_tokens /= 2
-				when :one_leg then @bonus_defense -= 2
-				when :hangover then @bonus_dice -= 1; @bonus_defense -= 2; @current_effects << :hangover
-			end
-
-			@brags << brag
-		end
-
 		def dead?
 			@wounds >= 4 && !has?(:cannot_die)
 		end
 
+		def gain_bonus token_type, amount=1
+			Logger.log '%s %s %i %s permanently.' % [@name, amount > 0 ? 'gains' : 'loses', amount, token_type] if amount != 0
+			@tokens[token_type][amount < 0 ? 1 : 0] += amount
+		end
+
+		def gain_temp token_type, amount # FIXME: TURN VERSUS ROUND
+			Logger.log '%s %s %i %s for the rest of the turn.' % [@name, amount > 0 ? 'gains' : 'loses', amount, token_type] if amount != 0
+			@temp_tokens[token_type] += amount
+		end
+
+		def bonus token_type
+			@tokens[token_type].sum
+		end
+
+		def temp token_type # FIXME: per turn vs per roll
+			@temp_tokens[token_type]
+		end
+
+
 		def defense
 			return 0 if has? :zero_defense
-			@hero.defense + @bonus_defense
+			@hero.defense + bonus(:defense) + temp(:defense)
 		end
 
 		def attack_dice
 			return 0 if has? :zero_attack
-			@weapon.dice + @bonus_dice + @temp_dice
+			# FIXME: might want to use lower value, eg for cockroach
+			@weapons.map(&:dice).max + bonus(:dice) + temp(:dice)
 		end
 
 		def bonus_attack
 			return 0 if has? :zero_attack
-			@bonus_attack + (weapon.call_hook(:bonus_damage, self) || 0)
+			@weapons.inject(bonus(:attack)) { |s,w| s + (w.call_hook(:bonus_attack, self) || 0) }
 		end
 
 		def attack_factor
@@ -204,13 +222,8 @@ module GauntletOfFools
 		end
 
 		def calculate_attack dice
-			modified_dice_result = dice.reject { |d| brags.include?(:one_arm) && d <= 2 }
-
-			if @weapon.hooks?(:attack_calc)
-				@weapon.call_hook(:attack_calc, modified_dice_result, bonus_attack, attack_factor)
-			else
-				(modified_dice_result.sum + bonus_attack) * attack_factor
-			end
+			dice_factor = @weapons.any? { |w| w.name == 'Cleaver' } ? 4 : 1  # FIXME: hmm
+			(dice.sum * dice_factor + bonus_attack) * attack_factor
 		end
 	end
 end

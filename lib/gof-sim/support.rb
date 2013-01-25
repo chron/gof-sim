@@ -48,6 +48,10 @@ module GauntletOfFools
 			@name
 		end
 
+		def <=> other
+			@name <=> other.name
+		end
+
 		def hooks hook_name, &b
 			@hooks[hook_name] = b
 		end

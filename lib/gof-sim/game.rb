@@ -64,7 +64,7 @@ module GauntletOfFools
 
 			players.each do |p| # FIXME: move this
 				@current_player = p
-				run_hooks(:at_start)
+				p.run_hook(:at_start)
 			end
 
 			active_players = players.dup
@@ -78,7 +78,7 @@ module GauntletOfFools
 
 				if !encounter.instant
 					players.each do |p|
-						Logger.log ' * %s %s/%s (%s) -> $%i' % [p.name, p.hero.name, p.weapon.name, p.dead? ? 'dead' : p.wounds, p.treasure]
+						Logger.log ' * %s %s (%s) -> $%i' % [p.name, p, p.dead? ? 'dead' : p.wounds, p.treasure]
 					end
 				end
 
@@ -97,19 +97,13 @@ module GauntletOfFools
 			players
 		end
 
-		def run_hooks hook_name, *extra_args
-			[@current_encounter,@current_player.hero,@current_player.weapon].map do |obj| 
-				obj && proc=obj.call_hook(hook_name, @current_player, @current_encounter, *extra_args)
-			end.compact
-		end
-
 		def fight player, encounter
 			@current_player = player
 			player.current_encounter = encounter
 			
 			if !encounter.instant
 				player.begin_turn # FIXME: turn != encounter
-				run_hooks(:before_encounter)
+				player.run_hook(:before_encounter)
 			end
 
 			if player.has? :skip_encounter
@@ -129,26 +123,18 @@ module GauntletOfFools
 						@encounter_mods[player].clear
 					end
 
-					run_hooks(:before_rolling)
+					player.run_hook(:before_rolling)
 
 					if player.has? :kill_next
 						Logger.log "%s kills %s using a power." % [player.name, encounter.name]
 						killed = true
 					else 
 						dice_result = player.roll(player.attack_dice)
-						
-						if player.weapon.hooks? :after_rolling
-							r = player.weapon.call_hook(:after_rolling, player, encounter, dice_result)
-							dice_result = r || dice_result
-						end
+						player.run_hook(:after_rolling, dice_result)
 
 						total_attack = player.calculate_attack(dice_result)
 
-						hit_chance = 100 * if player.weapon.hooks?(:hit_chance_calc)
-							player.weapon.call_hook(:hit_chance_calc, player, encounter.defense)
-						else
-							player.chance_to_hit(encounter.defense)
-						end
+						hit_chance = 100 * player.chance_to_hit(encounter.defense)
 
 						Logger.log "%s attacks %s (%.2f%% chance) => %id6%+i%s = %p = %i" % [
 							player.name, encounter.name, hit_chance, player.attack_dice, player.bonus_attack, player.attack_factor == 1 ? '' : "*#{player.attack_factor}", dice_result, total_attack
@@ -163,7 +149,7 @@ module GauntletOfFools
 						Logger.log "%s misses %s." % [player.name, encounter.name]
 					end
 
-					run_hooks(:after_attack)
+					player.run_hook(:after_attack)
 
 					if player.has? :dodge_next
 						encounter_hits = false
@@ -179,7 +165,7 @@ module GauntletOfFools
 							damage_multiplier = 2 ** player.effects.count(:take_double_damage)
 							player.wound(encounter.damage * damage_multiplier) if encounter.damage > 0
 
-							damage_multiplier.times { run_hooks(:extra_damage) } # FIXME: text
+							damage_multiplier.times { player.run_hook(:extra_damage) } # FIXME: text
 						end
 					else
 						Logger.log "%s dodges." % [player.name]
@@ -187,15 +173,15 @@ module GauntletOfFools
 
 					player.gain(:dodged_this_round) if !encounter_hits
 
-					if killed
+					if killed # FIXME: treasure before damage, eg Griffin, demonic blade
 						if player.hero.call_hook(:instead_of_treasure, player) # FIXME
 							Logger.log("%s uses a power instead of gaining treasure." % [player.name]) # FIXME
 						else
 							loot = encounter.treasure
-							loot -= 1 if player.brags.include?(:blindfold) && !encounter_hits
+							loot -= 1 if player.has?(:blindfolded) && !encounter_hits
 
 							player.gain_treasure(loot) if loot > 0
-							run_hooks(:extra_treasure)
+							player.run_hook(:extra_treasure)
 						end
 
 						if player.has? :hangover
@@ -210,7 +196,7 @@ module GauntletOfFools
 
 				if !encounter.instant
 					player.wound(1) if player.has? :poison # VVV this
-					run_hooks(:after_encounter) # FIXME: after_encounter hooks if encounter is skipped?
+					player.run_hook(:after_encounter) # FIXME: after_encounter hooks if encounter is skipped?
 				end
 
 				player.current_encounter = nil

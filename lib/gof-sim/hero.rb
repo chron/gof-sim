@@ -1,10 +1,12 @@
 module GauntletOfFools
 	class Hero < GameObject
-		attr_reader :defense, :tokens
-		def initialize name, defense, tokens
-			super(name)
+		attr_reader :defense, :tokens, :number_of_weapons
 
+		def initialize name, defense, tokens
+			@number_of_weapons = 1
 			@defense, @tokens = defense, tokens
+
+			super(name)
 		end
 
 		#Hero.new('adventurer', 0, 0)
@@ -14,12 +16,12 @@ module GauntletOfFools
 		}
 
 		Hero.new('Armorer', 13, 2) {
-			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.bonus_defense += 3 }
+			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.gain_bonus(:defense, 3) }
 		}
 
-		#Hero.new('Artificer', 14, 2) { # check defense
-		#	hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.bonus_dice += 1 }
-		#}
+		Hero.new('Artificer', 14, 2) { # check defense
+			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.gain_bonus(:dice, 1) }
+		}
 
 		#Hero.new('avenger', 0, 0)
 
@@ -72,7 +74,7 @@ module GauntletOfFools
 			hooks(:before_encounter) { |player, encounter| player.decide(:use_wizard) && player.spend_hero_token && player.gain(:skip_encounter) }
 		}
 
-		Hero.new('Zealot', 15, 2) {
+		Hero.new('Zealot', 15, 2) { # zeroes defense but you can still raise it?
 			hooks(:before_rolling) { |player, encounter| player.decide(:use_zealot) && player.spend_hero_token && player.gain(:kill_next) && player.gain(:zero_defense)}
 		}
 
@@ -80,6 +82,8 @@ module GauntletOfFools
 		#	# Class Ability: Spend a token if another player is alive to play a turn even though you are dead.
 		#}
 
-		# Hero.new('armsmaster', 0, 0)
+		Hero.new('Armsmaster', 14, 0) {
+			@number_of_weapons = 2
+		} # FIXME: hook for this maybe?
 	end
 end
