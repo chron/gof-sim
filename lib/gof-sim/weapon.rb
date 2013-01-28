@@ -31,9 +31,10 @@ module GauntletOfFools
 			player.spend_weapon_token(n) && player.gain_temp(:dice, 2*n) } # FIXME: multiples
 		}
 
-		# Weapon.new('Flaming Sword', 0, 0)
+		Weapon.new('Flaming Sword', 5, 2)
+			# Spend token: before roling, take 1 wound to kill and dodge a monster
 
-		# Weapon.new('holy_sword', 5, 2) # Spend a token before rolling, discard all Penalty tokens, and ignore your Boasts this turn.
+		Weapon.new('Holy Sword', 5, 2) # Spend a token before rolling, discard all Penalty tokens, and ignore your Boasts this turn.
 		
 		Weapon.new('Mace', 5, 2) { # check tokens
 			hooks(:after_rolling) { |player, encounter, rolls|
@@ -53,6 +54,9 @@ module GauntletOfFools
 			hooks(:at_start) { |player| player.gain_treasure(1) }
 		}
 
+		Weapon.new('Scepter', 4, 2)
+			# Before rolling, kill a monster with less attack than defense
+
 		Weapon.new('Scimitar', 4, 2) { # FIXME: can this be used multiple times?
 			# FIXME: doesn't have to be 2 lowest
 			hooks(:after_rolling) { |player, encounter, rolls|
@@ -63,14 +67,17 @@ module GauntletOfFools
 			}
 		}
 
-		Weapon.new('Spear', 4, 2) { # not sure on dice or tokens
+		Weapon.new('Sling', 3, 2)
+			# spend a token before rolling, kill and dodge a monster with 20 attack or more
+
+		Weapon.new('Spear', 4, 2) {
 			hooks(:after_rolling) { |player, encounter, rolls|
-				player.decide(:use_spear, rolls) && player.spend_weapon_token && [14] # use 14 as your roll
+				player.decide(:use_spear, rolls) && player.spend_weapon_token && [14] # FIXME: make sure this can't be rerolled or whatever
 			}
 		}
 
 		Weapon.new('Spiked Shield', 3, 2) {
-			hooks(:at_start) { |player| player.gain_bonus(:defense, 1) }
+			hooks(:at_start) { |player| player.gain_bonus(:defense, 1) } # FIXME: AFTER ROLLING!
 			hooks(:before_rolling) { |player, encounter| encounter.attack >= player.defense && player.spend_weapon_token && player.gain(:kill_next) } # condition not quite right
 			# Spend a token after rolling, to Kill a Monster that Damaged you.
 		}
@@ -80,6 +87,10 @@ module GauntletOfFools
 				n1, n2 = player.decide(:use_staff)
 				(n1 || n2) && player.spend_weapon_token(n1+n2) && player.gain_temp(:dice,2*n1) && player.gain_temp(:defense, 6*n2)
 			}
+		}
+
+		Weapon.new('Sword', 4, 2) {
+			# spend token +3 defense this turn
 		}
 
 		Weapon.new('Throwing Stars', 2, 20) { 

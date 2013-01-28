@@ -33,9 +33,16 @@ module GauntletOfFools
 			# You may pay weapon token to skip this fight. 
 		}
 
+		Encounter.new('Brass Golem', 16, 15, 1, 2)
+			# treasure -> receive 2 more if you both killed and dodged
+
 		Encounter.new('Dancing Sword', 21, 8, 1, 3) {
 			hooks(:extra_treasure) { |player| player.bonus_attack += 1 }
 		}
+
+		Encounter.new('Doppelgänger', 14, 0, 1, 3)
+			# defense = your heros' defense
+			# needs to factor buffs etc as well (eg monk!)
 
 		Encounter.new('Fire Elemental', 18, 14, 1, 0) {
 			hooks(:extra_treasure) { |player| player.gain_treasure(player.defense / 3) }
@@ -43,16 +50,24 @@ module GauntletOfFools
 
 		Encounter.new('Gargoyle', 13, 19, 1, 2)
 
-		Encounter.new('Giant Cockroach', 11, 12, 1, 1) {
+		Encounteer.new('Giant', 24, 20, 1, 5)
+
+		Encounter.new('Giant Cockroach', 11, 12, 1, 2) {
 			hooks(:extra_treasure) { |player| player.bonus_defense -= 1 }
 		}
+
+		Encounter.new('Giant Crab', 8, 18, 1, 2)
+			# treasure -> +1 bonus armor
 
 		Encounter.new('Giant Scorpion', 19, 12, 2, 3) {
 			hooks(:extra_damage) { |player| player.gain :cannot_die }
 		}
 
+		Encounter.new('Giant Spider', 17, 19, 0, 3)
+			# damage = poison (no damage this turn!)
+
 		Encounter.new('Giant Toad', 14, 12, 1, 2) {
-			# and a one-time dice
+			# treasure -> and a one-time dice
 		}
 
 		Encounter.new('Giant Turtle', 9, 14, 1, 1)
@@ -63,12 +78,18 @@ module GauntletOfFools
 
 		Encounter.new('Goblin', 13, 10, 1, 2)
 
+		Encounter.new('Gopher', 6, 7, 0, 1)
+
 		Encounter.new('Griffin', 11, 13, 1, 3) {
 			hooks(:extra_damage) { |player| player.gain_treasure -2}
 		}
 
 		Encounter.new('Guardian', 10, 16, 1, 0) {
-			# treasure = Turn over an Encounter that only you get to use, if you want.
+			# treasure = Turn over an Encounter that only you get to use, if you want. (skip and discard modifiers)
+		}
+
+		Encounter.new('Hellhound', 16, 10, 1, 3) {
+			# treasure -> you may take 1 wound for extra 3 gold
 		}
 
 		Encounter.new('Mercenary', 18, 14, 2, 4) {
@@ -93,13 +114,21 @@ module GauntletOfFools
 			# If you don't Kill this, fight it a 2nd time.
 		}
 
-		Encounter.new('Vampire', 21, 18, 0, 3) {
-			hooks(:extra_damage) { |player| player.wound(player.wounds <= 2 ? 2 : 1) }
+		Encounter.new('Unicorn', 12, 8, 1, 0)
+			# extra treasure -> one time dice
+
+		Encounter.new('Vampire', 21, 18, 0, 4) {
+			hooks(:extra_damage) { |player| player.wound(player.wounds => 2 ? 2 : 1) }
 		}
+
+		Encounter.new('Will-o-wisp', 19, 15, 9, 2)
+			# extra damage -> lose hero token
 
 		Encounter.new('Witch', 15, 10, 1, 2) {
 			hooks(:extra_damage) { |player| player.bonus_defense -= 3 }
 		}
+
+		Encounter.new('Wolf', 12, 11, 1, 1)
 
 		Encounter.new('Extra Scary') {
 			instant!
@@ -121,9 +150,14 @@ module GauntletOfFools
 			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.treasure += 3 } # check this value
 		}
 
+		#Encounter.new('Side Passage')
+
 		Encounter.new('Cache') {
 			hooks(:instead_of_combat) { |player| player.gain_treasure 2 }
 		}
+
+		Encounter.new('Gold Vein')
+			# roll an attack, 1 gold per 5 attack ( round down)
 
 		Encounter.new('Healing Pool') {
 			hooks(:instead_of_combat) { |player| player.heal 1 } # penalties?

@@ -9,54 +9,58 @@ module GauntletOfFools
 			super(name)
 		end
 
-		#Hero.new('adventurer', 0, 0)
+		Hero.new('Adventurer', 15, 2)
+			# token -> after an encounter, once per encounbter, visit that encounter again
 
-		Hero.new('Alchemist', 14, 2) {
+		Hero.new('Alchemist', 14, 2) { # FIXME: need AI hook for this?
 			hooks(:after_encounter) { |player, encounter| player.has?(:killed_this_round) && player.has?(:dodged_this_round) && player.wounds > 0 && player.spend_hero_token && player.heal(1) }
 		}
 
-		Hero.new('Armorer', 13, 2) {
+		Hero.new('Armorer', 13, 2) { # FIXME: AI hook
 			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.gain_bonus(:defense, 3) }
 		}
 
-		Hero.new('Artificer', 14, 2) { # check defense
+		Hero.new('Artificer', 15, 2) { # FIXME: AI hook
 			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.gain_bonus(:dice, 1) }
 		}
 
-		#Hero.new('avenger', 0, 0)
+		Hero.new('Avenger', 16, 2)
+			# spend token -> after rolling, +3 attack per play killed on previous turns
 
 		Hero.new('Barbarian', 18, 0)
 
-		#Hero.new('berserker', 0, 0)
+		Hero.new('Berserker', 14, 2)
+			# spend token -> before rolling, +1 dice this turn per wound you have, and dodge if you kill
 
-		#Hero.new('jester', 0, 0) 
+		Hero.new('Jester', 14, 2) 
+			# token -> before rolling, switch monster's attack and defense
 
 		Hero.new('Knight', 16, 2) {
 			hooks(:instead_of_damage) { |player,encounter| player.decide(:use_knight) && player.spend_hero_token && player.wound(1) } # case of zero wounds?
 		}
 
-		# Hero.new('monk', 14, 4)
+		Hero.new('Monk', 10, 4) {
+			# token -> bnefore rolling, 1 dice and 4 defense this turn
+		}
 
-		# Hero.new('Necromancer', 16, 2)
-			# Has all abilities of heroes killed on previous turns
+		Hero.new('Necromancer', 16, 2)
+			# Has all abilities of heroes killed on previous turns (includes passives?)
 
 		Hero.new('Ninja', 17, 0) {
 			hooks(:at_start) { |player| player.weapon_tokens *= 2 }
 		}
 
-		Hero.new('Priest', 14, 2) {
+		Hero.new('Priest', 14, 2) { # FIXME: zero attack = don't attack?
 			hooks(:before_encounter) { |player| player.wounds > 0 && player.decide(:use_priest) && player.spend_hero_token && player.heal(1) && player.gain(:zero_attack) && player.gain(:no_weapon_tokens)}
 		}
 
 		Hero.new('Prospector', 15, 0) {
-			hooks(:after_encounter) { |player,encounter| player.gain_treasure(1) if !player.dead?}
+			hooks(:after_encounter) { |player,encounter| !player.dead? && player.gain_treasure(1)}
 		}
 
-		#Hero.new('thief', 0, 0) {
-		#	before_combat { |player,encounter| player.spend_1_token && player.dodge }
-#
-		#	unfinished!
-		#}
+		Hero.new('Thief', 13, 2) {
+			# spend a token -> dodge a monster or TRAP
+		}
 
 		Hero.new('Trapper', 16, 2) {
 			hooks(:before_rolling) { |player, encounter| player.decide(:use_trapper) && player.spend_hero_token && player.gain(:trapper_bounty) } # use once per fight but lasts whole turn
@@ -64,11 +68,10 @@ module GauntletOfFools
 		}
 
 
-		#Hero.new('warlord', 10, 0) { # FIXME: tokens
-		#	at_start { |player| player.bonus_dice += 1 } # + active
-		#
-		#	unfinished!
-		#}
+		Hero.new('Warlord', 12, 2) {
+			hooks(:at_start) { |player| player.gain_bonus(:dice) }
+			# spend a token -> after rolling, roll an extra dice
+		}
 
 		Hero.new('Wizard', 15, 2) {
 			hooks(:before_encounter) { |player, encounter| player.decide(:use_wizard) && player.spend_hero_token && player.gain(:skip_encounter) }
@@ -78,9 +81,8 @@ module GauntletOfFools
 			hooks(:before_rolling) { |player, encounter| player.decide(:use_zealot) && player.spend_hero_token && player.gain(:kill_next) && player.gain(:zero_defense)}
 		}
 
-		#Hero.new('zombie', 13, 2) {
-		#	# Class Ability: Spend a token if another player is alive to play a turn even though you are dead.
-		#}
+		Hero.new('Zombie', 13, 2)
+			# Class Ability: Spend a token if another player is alive to play a turn even though you are dead.
 
 		Hero.new('Armsmaster', 14, 0) {
 			@number_of_weapons = 2
