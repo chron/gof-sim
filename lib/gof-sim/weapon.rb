@@ -31,15 +31,18 @@ module GauntletOfFools
 			player.spend_weapon_token(n) && player.gain_temp(:dice, 2*n) } # FIXME: multiples
 		}
 
-		Weapon.new('Flaming Sword', 5, 2)
-			# Spend token: before roling, take 1 wound to kill and dodge a monster
+		Weapon.new('Flaming Sword', 5, 2) {
+			hooks(:before_rolling) { |player, encounter| player.decide(:use_flaming_sword) && player.spend_weapon_token && player.wound(1) && player.gain(:kill_next) && player.gain(:dodge_next) }
+		}
 
-		Weapon.new('Holy Sword', 5, 2) # Spend a token before rolling, discard all Penalty tokens, and ignore your Boasts this turn.
-		
+		Weapon.new('Holy Sword', 5, 2) {
+			hooks(:before_rolling) { |player, encounter| player.decide(:use_holy_sword) && player.spend_weapon_token && player.discard_all_penalty_tokens && player.gain(:ignore_boasts) }
+		}
+
 		Weapon.new('Mace', 5, 2) { # check tokens
 			hooks(:after_rolling) { |player, encounter, rolls|
 				n = player.decide(:use_mace, rolls)
-				player.spend_weapon_token(n) && (rolls + player.roll(n))
+				player.spend_weapon_token(n) && rolls + player.roll(n)
 			}
 		}
 
@@ -54,21 +57,28 @@ module GauntletOfFools
 			hooks(:at_start) { |player| player.gain_treasure(1) }
 		}
 
-		Weapon.new('Scepter', 4, 2)
-			# Before rolling, kill a monster with less attack than defense
+		Weapon.new('Scepter', 4, 2) {
+			hooks(:before_rolling) { |player, encounter| encounter.attack < encounter.defense && player.decide(:use_scepter) && player.spend_weapon_token && player.gain(:kill_next) }
+		}
 
 		Weapon.new('Scimitar', 4, 2) { # FIXME: can this be used multiple times?
 			# FIXME: doesn't have to be 2 lowest
 			hooks(:after_rolling) { |player, encounter, rolls|
 				if player.decide(:use_scimitar, rolls) && player.spend_weapon_token
-					# FIXME: what if they only had < 2 dice to begin with
-					rolls.sort[2..-1] + player.roll(2)
+					if rolls.empty?
+						[]
+					elsif rolls.size == 1
+						player.roll(1)
+					else
+						rolls.sort[2..-1] + player.roll(2)
+					end
 				end
 			}
 		}
 
-		Weapon.new('Sling', 3, 2)
-			# spend a token before rolling, kill and dodge a monster with 20 attack or more
+		Weapon.new('Sling', 3, 2) {
+			hooks(:before_rolling) { |player, encounter| encounter.attack >= 20 && player.decide(:use_sling) && player.spend_weapon_token && player.gain(:kill_next) && player.gain(:dodge_next) }
+		}
 
 		Weapon.new('Spear', 4, 2) {
 			hooks(:after_rolling) { |player, encounter, rolls|
@@ -77,12 +87,11 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Spiked Shield', 3, 2) {
-			hooks(:at_start) { |player| player.gain_bonus(:defense, 1) } # FIXME: AFTER ROLLING!
-			hooks(:before_rolling) { |player, encounter| encounter.attack >= player.defense && player.spend_weapon_token && player.gain(:kill_next) } # condition not quite right
-			# Spend a token after rolling, to Kill a Monster that Damaged you.
+			hooks(:at_start) { |player| player.gain_bonus(:defense, 1) }
+			hooks(:after_rolling) { |player, encounter, rolls| encounter.attack >= player.defense && player.decide(:use_spiked_shield, rolls) && player.spend_weapon_token && player.gain(:kill_next) }
 		}
 
-		Weapon.new('Staff', 3, 4) { # Spend a token before rolling, either +2 Attack Dice or +6 Defense this turn..
+		Weapon.new('Staff', 3, 4) { # Spend a token before rolling, either +2 Attack Dice or +6 Defense this turn.
 			hooks(:before_rolling) { |player, encounter|
 				n1, n2 = player.decide(:use_staff)
 				(n1 || n2) && player.spend_weapon_token(n1+n2) && player.gain_temp(:dice,2*n1) && player.gain_temp(:defense, 6*n2)
@@ -90,7 +99,10 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Sword', 4, 2) {
-			# spend token +3 defense this turn
+			hooks(:after_attack) { |player, encounter| 
+				n = player.decide(:use_sword)
+				player.spend_weapon_token(n) && player.gain_temp(:defense, 3*n)
+			}
 		}
 
 		Weapon.new('Throwing Stars', 2, 20) { 
@@ -108,12 +120,6 @@ module GauntletOfFools
 			hooks(:after_attack) { |player,encounter| !player.has?(:killed_this_round) && player.spend_weapon_token && player.gain(:dodge_next) }
 		}
 
-		# Weapon.new('Cleaver', 1, 0) { # PROMO CARD
-		#	hooks(:attack_calc) { |rolls,bonuses,factor| (rolls.inject(0) { |total,d| total + 4*d } + bonuses) * factor }
-		#	hooks(:hit_chance_calc) { |player,defense| # FIXME: DRY this a bit
-		#		d = Player::DISTRIBUTION[player.attack_dice].map { |k,v| [(4*k + player.bonus_attack) * player.attack_factor, v] }
-		#		d.inject(0) { |s,(k,v)| s + (k >= defense ? v : 0) }.to_f / d.transpose.last.sum
-		#	}
-		#}
+		Weapon.new('Cleaver', 1, 0) # PROMO CARD # FIXME: this is implemented via magic
 	end
 end

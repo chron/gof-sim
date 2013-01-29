@@ -33,16 +33,18 @@ module GauntletOfFools
 			# You may pay weapon token to skip this fight. 
 		}
 
-		Encounter.new('Brass Golem', 16, 15, 1, 2)
-			# treasure -> receive 2 more if you both killed and dodged
-
-		Encounter.new('Dancing Sword', 21, 8, 1, 3) {
-			hooks(:extra_treasure) { |player| player.bonus_attack += 1 }
+		Encounter.new('Brass Golem', 16, 15, 1, 2) {
+			hooks(:extra_treasure) { |player| player.has?(:dodged_this_turn) && player.gain_treasure(2) }
 		}
 
-		Encounter.new('Doppelgänger', 14, 0, 1, 3)
-			# defense = your heros' defense
-			# needs to factor buffs etc as well (eg monk!)
+		Encounter.new('Dancing Sword', 21, 8, 1, 3) {
+			hooks(:extra_treasure) { |player| player.gain_bonus(:attack, 1) }
+		}
+
+		Encounter.new('Doppelganger', 14, 0, 1, 3) {# Doppelgänger
+			hooks(:before_encounter) { |player, encounter| self.defense = player.defense } # this is so it displays correctish at start
+			hooks(:after_rolling) { |player, encounter, rolls| self.defense = player.defense; rolls } # FIXME: or return nil?
+		}
 
 		Encounter.new('Fire Elemental', 18, 14, 1, 0) {
 			hooks(:extra_treasure) { |player| player.gain_treasure(player.defense / 3) }
@@ -50,29 +52,31 @@ module GauntletOfFools
 
 		Encounter.new('Gargoyle', 13, 19, 1, 2)
 
-		Encounteer.new('Giant', 24, 20, 1, 5)
+		Encounter.new('Giant', 24, 20, 1, 5)
 
 		Encounter.new('Giant Cockroach', 11, 12, 1, 2) {
-			hooks(:extra_treasure) { |player| player.bonus_defense -= 1 }
+			hooks(:extra_treasure) { |player| player.gain_bonus(:armor, -1) }
 		}
 
-		Encounter.new('Giant Crab', 8, 18, 1, 2)
-			# treasure -> +1 bonus armor
+		Encounter.new('Giant Crab', 8, 18, 1, 2) {
+			hooks(:extra_treasure) { |player| player.gain_bonus(:armor) }
+		}
 
 		Encounter.new('Giant Scorpion', 19, 12, 2, 3) {
 			hooks(:extra_damage) { |player| player.gain :cannot_die }
 		}
 
-		Encounter.new('Giant Spider', 17, 19, 0, 3)
-			# damage = poison (no damage this turn!)
+		Encounter.new('Giant Spider', 17, 19, 0, 3) {
+			hooks(:extra_damage) { |player| player.gain :poison }
+		}
 
 		Encounter.new('Giant Toad', 14, 12, 1, 2) {
-			# treasure -> and a one-time dice
+			hooks(:extra_treasure) { |player| player.gain_bonus(:one_use_die) }
 		}
 
 		Encounter.new('Giant Turtle', 9, 14, 1, 1)
 
-		Encounter.new('Gladiator', 15, 15, 1, 3) {
+		Encounter.new('Gladiator', 15, 15, 1, 3) { # PROMO
 			# bet up to 5, receieve double
 		}
 
@@ -81,7 +85,7 @@ module GauntletOfFools
 		Encounter.new('Gopher', 6, 7, 0, 1)
 
 		Encounter.new('Griffin', 11, 13, 1, 3) {
-			hooks(:extra_damage) { |player| player.gain_treasure -2}
+			hooks(:extra_damage) { |player| player.gain_treasure(-2) }
 		}
 
 		Encounter.new('Guardian', 10, 16, 1, 0) {
@@ -107,25 +111,27 @@ module GauntletOfFools
 		Encounter.new('Skelephant', 13, 8, 1, 2)
 
 		Encounter.new('Slime Monster', 22, 18, 1, 4) {
-			hooks(:extra_damage) { |player| player.bonus_dice -= 1 }
+			hooks(:extra_damage) { |player| player.gain_bonus(:dice, -1) }
 		}
 
 		Encounter.new('Troll', 20, 15, 1, 4) {
 			# If you don't Kill this, fight it a 2nd time.
 		}
 
-		Encounter.new('Unicorn', 12, 8, 1, 0)
-			# extra treasure -> one time dice
-
-		Encounter.new('Vampire', 21, 18, 0, 4) {
-			hooks(:extra_damage) { |player| player.wound(player.wounds => 2 ? 2 : 1) }
+		Encounter.new('Unicorn', 12, 8, 1, 0) {
+			hooks(:extra_treasure) { |player| player.gain_bonus(:one_use_die) }
 		}
 
-		Encounter.new('Will-o-wisp', 19, 15, 9, 2)
-			# extra damage -> lose hero token
+		Encounter.new('Vampire', 21, 18, 0, 4) {
+			hooks(:extra_damage) { |player| player.wound(player.wounds >= 2 ? 2 : 1) }
+		}
+
+		Encounter.new('Will-o-wisp', 19, 15, 0, 2) { # check damage
+			hooks(:extra_damage) { |player| player.gain_hero_token(-1) }
+		}
 
 		Encounter.new('Witch', 15, 10, 1, 2) {
-			hooks(:extra_damage) { |player| player.bonus_defense -= 3 }
+			hooks(:extra_damage) { |player| player.gain_bonus(:defense, -3) }
 		}
 
 		Encounter.new('Wolf', 12, 11, 1, 1)
@@ -156,7 +162,9 @@ module GauntletOfFools
 			hooks(:instead_of_combat) { |player| player.gain_treasure 2 }
 		}
 
-		Encounter.new('Gold Vein')
+		Encounter.new('Gold Vein') { 
+			hooks(:instead_of_combat) { |player| player.gain_treasure(player.calculate_attack(player.roll(player.attack_dice)) / 5) } # FIXME: doesn't run hooks
+		}
 			# roll an attack, 1 gold per 5 attack ( round down)
 
 		Encounter.new('Healing Pool') {
@@ -164,10 +172,10 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Magic Pool') {
-			hooks(:instead_of_combat) { |player| player.gain_weapon_token; player.hero_tokens += 1 } # should be a choice
+			hooks(:instead_of_combat) { |player| player.gain_weapon_token; player.gain_hero_token } # should be a choice
 		}
 
-		Encounter.new('Spear Trap') { # TODO: THIS CAN BE DODGED
+		Encounter.new('Spear Trap') { # TODO: THIS CAN BE DODGED BY THIEVES
 			hooks(:instead_of_combat) { |player| player.wound 1 }
 		}
 

@@ -19,14 +19,13 @@ module GauntletOfFools
 		end
 
 		def with_any_new_brag
-			(BRAGS - brags).map { |b| Option.new(hero, weapons, current_owner, brags + [b], self)}
+			(GauntletOfFools::Brag.all - brags).map { |b| Option.new(hero, weapons, current_owner, brags + [b], self)}
 		end
 	end
 
 	class Player
-		attr_reader :name, :hero, :weapons, :brags, :age
-		attr_writer :bonus_attack
-		attr_accessor :wounds, :treasure, :bonus_dice, :bonus_defense, :hero_tokens
+		attr_reader :name, :hero, :weapons, :brags, :age, :opponents
+		attr_accessor :wounds, :treasure, :hero_tokens
 		attr_accessor :current_encounter
 
 		def weapon_tokens # FIXME: temporary
@@ -49,10 +48,10 @@ module GauntletOfFools
 			end
 		end
 
-		CHANCE_TO_HIT = Hash.new do |h,(dice,attack,factor,defense)|
-			d = DISTRIBUTION[dice].map { |k,v| [(k + attack) * factor, v] }
+		CHANCE_TO_HIT = Hash.new do |h,(dice,attack,factor,dfactor,defense)|
+			d = DISTRIBUTION[dice].map { |k,v| [(k * dfactor + attack) * factor, v] }
 			hits = d.select { |k,v| k >= defense }
-			h[[dice,attack,factor,defense]] = hits.empty? ? 0 : (hits.transpose.last.sum.to_f / d.transpose.last.sum)
+			h[[dice,attack,factor,dfactor,defense]] = hits.empty? ? 0 : (hits.transpose.last.sum.to_f / d.transpose.last.sum)
 		end
 
 		def initialize name, hero, weapons, brags=[]
@@ -61,20 +60,27 @@ module GauntletOfFools
 			@hero = hero
 			@weapons = [*weapons]
 
+			@opponents = []
+
 			@ai = BasicAI.new(self)
 
 			@wounds, @treasure, @age = 0, 0, 0
-			
+			@current_encounter = []
+
 			@current_effects, @next_turn_effects = [], []
 			@tokens = Hash.new { |h,k| h[k] = [0, 0]}
 			@temp_tokens = Hash.new(0)
 
 			@hero_tokens = hero.tokens
-			@weapon_tokens = weapons.map(&:tokens)
+			@weapon_tokens = @weapons.map(&:tokens)
 		end
 
 		def run_hook hook, *data
-			[*@brags, @hero, *@weapons].map { |obj| obj.call_hook(hook, self, current_encounter, *data) }.compact
+			r = [@current_encounter, @hero, @weapons, @brags].flatten.compact.inject(data) do |d,obj| 
+				iv = obj.call_hook(hook, self, current_encounter, *d)
+				iv ? [iv] : d
+			end
+			r.size == 1 ? r.first : r # FIXME
 		end
 
 		def to_s
@@ -88,7 +94,7 @@ module GauntletOfFools
 
 		def chance_to_hit defense, bonus_dice=0 # for simulation purposes
 			return 1.0 if has? :kill_next
-			CHANCE_TO_HIT[[attack_dice+bonus_dice, bonus_attack, attack_factor, defense]]
+			CHANCE_TO_HIT[[attack_dice+bonus_dice, bonus_attack, attack_factor, dice_factor, defense]]
 		end
 
 		def decide d, *args
@@ -125,9 +131,20 @@ module GauntletOfFools
 			@current_effects.delete_if { |e| effect == e }
 		end
 
+		def discard_all_penalty_tokens
+			Logger.log '%s discards all penalty tokens.' % [@name]
+			@tokens.each_key { |k| @tokens[k][1] = 0 }
+		end
+
+		def gain_hero_token n=1
+			@hero_tokens += n
+			Logger.log '%s gains %s hero token%s (%s remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @hero_tokens]
+			true
+		end
+
 		def gain_weapon_token n=1
 			@weapon_tokens[0] += n # FIXME: player's choice sometimes
-			Logger.log '%s gains %s weapon token%s (%p remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens]
+			Logger.log '%s gains %s weapon token%s (%s remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens*?/]
 			true
 		end
 
@@ -138,7 +155,7 @@ module GauntletOfFools
 
 			if @weapon_tokens[0] >= n
 				@weapon_tokens[0] -= n
-				Logger.log '%s spends %s weapon token%s (%p remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens]
+				Logger.log '%s spends %s weapon token%s (%s remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens*?/]
 				true
 			end
 		end
@@ -154,7 +171,7 @@ module GauntletOfFools
 		end
 
 		def gain_treasure amount
-			Logger.log ("#{name} has #{amount > 0 ? 'gained' : 'lost'} #{amount.abs} coin#{amount == 1 ? '' : 's'}.")
+			Logger.log '%s has %s %i coin%s.' % [@name, amount > 0 ? 'gained' : 'lost', amount.abs, amount == 1 ? '' : 's']
 			@treasure += amount
 		end
 
@@ -174,12 +191,12 @@ module GauntletOfFools
 		end
 
 		def gain_bonus token_type, amount=1
-			Logger.log '%s %s %i %s permanently.' % [@name, amount > 0 ? 'gains' : 'loses', amount, token_type] if amount != 0
+			Logger.log '%s %s %i %s permanently.' % [@name, amount > 0 ? 'gains' : 'loses', amount.abs, token_type] if amount != 0
 			@tokens[token_type][amount < 0 ? 1 : 0] += amount
 		end
 
 		def gain_temp token_type, amount # FIXME: TURN VERSUS ROUND
-			Logger.log '%s %s %i %s for the rest of the turn.' % [@name, amount > 0 ? 'gains' : 'loses', amount, token_type] if amount != 0
+			Logger.log '%s %s %i %s for the rest of the turn.' % [@name, amount > 0 ? 'gains' : 'loses', amount.abs, token_type] if amount != 0
 			@temp_tokens[token_type] += amount
 		end
 
@@ -191,27 +208,33 @@ module GauntletOfFools
 			@temp_tokens[token_type]
 		end
 
-
 		def defense
 			return 0 if has? :zero_defense
-			@hero.defense + bonus(:defense) + temp(:defense)
+			subtotal = @hero.defense + bonus(:defense) + temp(:defense)
+			run_hook(:defense, subtotal)
 		end
 
 		def attack_dice
 			return 0 if has? :zero_attack
 			# FIXME: might want to use lower value, eg for cockroach
-			@weapons.map(&:dice).max + bonus(:dice) + temp(:dice)
+			subtotal = @weapons.map(&:dice).max + bonus(:dice) + temp(:dice)
+			run_hook(:attack_dice, subtotal)
 		end
 
 		def bonus_attack
 			return 0 if has? :zero_attack
-			@weapons.inject(bonus(:attack)) { |s,w| s + (w.call_hook(:bonus_attack, self) || 0) }
+			subtotal = @weapons.inject(bonus(:attack)) { |s,w| s + (w.call_hook(:bonus_attack, self) || 0) }
+			run_hook(:bonus_attack, subtotal)
 		end
 
 		def attack_factor
 			return 0 if has? :zero_attack
 			return 2 if has? :double_attack
 			1
+		end
+
+		def dice_factor
+			@weapons.any? { |w| w.name == 'Cleaver' } ? 4 : 1  # FIXME: hmm
 		end
 
 		def roll number
@@ -222,7 +245,6 @@ module GauntletOfFools
 		end
 
 		def calculate_attack dice
-			dice_factor = @weapons.any? { |w| w.name == 'Cleaver' } ? 4 : 1  # FIXME: hmm
 			(dice.sum * dice_factor + bonus_attack) * attack_factor
 		end
 	end

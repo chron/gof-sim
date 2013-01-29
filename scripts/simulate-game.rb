@@ -4,12 +4,12 @@ def sim(trials, *opts)
 	results = Hash.new { |h,k| h[k] = [] }
 
 	trials.times do |t|
-		players = opts.map { |o| o.to_player("#{o.hero.name}#{o.weapon.name.tr(' ', '')}") }
+		players = opts.map { |o| o.to_player("#{o.hero.name}#{[*o.weapons].map(&:name).join.tr(' ','')}") }
 		GauntletOfFools::EncounterPhase.new.run(*players)
 
 		players.each do |p|
 			# FIXME: dumb
-			o = opts.find { |o| o.hero == p.hero && o.weapon == p.weapon && o.brags == p.brags }
+			o = opts.find { |o| o.hero == p.hero && o.weapons == p.weapons && o.brags == p.brags }
 			results[o] << p.treasure
 		end
 	end
@@ -31,7 +31,7 @@ players.cycle do |p|
 
 	#rated_choices.sort_by { |k,v| -v }.each_with_index { |(o,v),i| puts '%2i %5.2f %-p' % [i, v, o] }
 	#puts
-
+	
 	choice = rated_choices.max_by { |k,v| v }[0]
 	puts '%s takes %s%s.' % [p, choice.hero, choice.brags.empty? ? '' : " with #{choice.brags*?,}"]
 	#puts

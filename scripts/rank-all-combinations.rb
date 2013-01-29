@@ -1,11 +1,11 @@
 require '../lib/gof-sim'
 
-total_trials = 500
+total_trials = 5000
 results = Hash.new { |h,k| h[k] = [] }
 
-combinations = GauntletOfFools::Hero.all.map do |h|
+combinations = GauntletOfFools::Hero.all.map do |h| # .select { |h| h.name == 'Ninja' }
 	weapons = GauntletOfFools::Weapon.all
-	weapons = weapons.product(weapons).reject { |w1,w2| w1 == w2 }.map(&:sort).uniq if h.number_of_weapons == 2 # FIXME so dumb
+	weapons = weapons.product(weapons).reject { |w1,w2| w1 == w2 }.map(&:sort).uniq if h.number_of_weapons == 2
 
 	weapons.map do |w|
 		n = "#{h.name}#{[*w].map(&:name).join.tr(' ','')}"
