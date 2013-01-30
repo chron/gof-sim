@@ -50,38 +50,51 @@ module GauntletOfFools
 	end
 
 	class EncounterPhase
-		def self.test_encounter e
+		def self.test_encounter *e
 			obj = new
-			obj.instance_eval { @encounters = [e] }
+			obj.instance_eval { @encounters = e }
 			obj
 		end
 
 		def initialize
-			@encounters = []
+			@encounters = Encounter.all.shuffle
 		end
 
 		def draw_encounter
 			a = []
 
-			until @encounters.empty? || (a.last && !a.last.instant)
-				a << @encounters.pop
+			until (a.last && !a.last.instant)
+				return [] if @encounters.empty?
+				a << @encounters.shift
 			end
+
 			[a.pop.dup, a]
 		end
 
 		def run *players
 			raise "no players" if players.empty?
-			@encounters = Encounter.all.shuffle
+
 			dead_players = []
+			current_mods = []
 			turn = 0
 
-			players.each { |p| p.run_hook(:at_start) }
+			players.each do |p| 
+				p.opponents = players.reject { |o| o == p }
+				p.run_hook(:at_start) 
+			end
 
 			Logger.log('New dungeon: %s' % [players.map(&:name)*'/'])
 
 			until @encounters.empty?
 				encounter, encounter_mods = *draw_encounter
-				encounter_mods.each { |em| em.call_hook(:modifies_next_encounter, encounter) } unless encounter_mods.empty?
+				break if encounter.nil?
+
+				current_mods += encounter_mods
+
+				if !encounter.non_combat?
+					current_mods.each { |em| em.call_hook(:modifies_next_encounter, encounter) }
+					current_mods.clear
+				end
 
 				turn += 1
 
@@ -96,9 +109,16 @@ module GauntletOfFools
 					next if player.dead?
 
 					player.begin_turn
-					Logger.log ('%s vs %s (%.2f%% chance to hit)') % [player.name, encounter.name, 100 * player.chance_to_hit(encounter.defense)]
-					
-					fight(player, encounter)
+					player.queue_fight(encounter)
+
+					until player.fight_queue.empty?
+						new_encounter = player.fight_queue.shift || draw_encounter.first
+						break if new_encounter.nil?
+						new_encounter.call_hook(:encounter_selection, self)
+
+						Logger.log ('%s vs %s (%.2f%% chance to hit)') % [player.name, new_encounter.name, 100 * player.chance_to_hit(new_encounter.defense)] if !new_encounter.non_combat?
+						fight(player, new_encounter)
+					end
 				end
 
 				(players.select { |p| p.dead? } - dead_players).each do |p|
@@ -114,6 +134,13 @@ module GauntletOfFools
 
 		def fight player, encounter
 			player.current_encounter = encounter
+			
+			if player.has? :optional_encounter
+				if !player.decide(:visit_encounter)
+					player.gain(:skip_encounter) # FIXME: does this run before/after hooks?
+				end
+			end
+
 			player.run_hook(:before_encounter)
 
 			if player.has? :skip_encounter
@@ -122,16 +149,16 @@ module GauntletOfFools
 				if encounter.hooks?(:instead_of_combat) # FIXME: could this be used for wizard?
 					encounter.call_hook(:instead_of_combat, player)
 				else
-					player.run_hook(:before_rolling)
+					player.run_hook(:before_rolling) # FIXME: one-use dice go hereish
 
 					player_hits = if player.has? :kill_next
 						Logger.log "%s kills %s using a power." % [player.name, encounter.name]
 						player.clear_effect :kill_next
 						true
 					else 
-						dice_result = player.roll(player.attack_dice)
-						# FIXME: after_rolling hooks directly mutate the dice_result array, pretty ugly
-						player.run_hook(:after_rolling, dice_result)
+						dice_roll = player.roll(player.attack_dice)
+						dice_result = player.run_hook(:after_rolling, dice_roll)
+
 						# FIXME: better way to manage this than checking :kill_next twice?
 						if player.has? :kill_next
 							Logger.log "%s kills %s using a power." % [player.name, encounter.name]
@@ -164,12 +191,14 @@ module GauntletOfFools
 						encounter.attack >= player.defense
 					end
 
+					player.gain(:dodged_this_round) if !encounter_hits
+
 					if player_hits
 						if player.hero.call_hook(:instead_of_treasure, player) # FIXME
 							Logger.log("%s uses a power instead of gaining treasure." % [player.name]) # FIXME
 						else
 							loot = encounter.treasure
-							loot -= 1 if player.has?(:blindfolded) && !encounter_hits
+							loot -= 1 if player.has?(:blindfolded) && !player.has?(:ignore_brags) && !encounter_hits
 
 							player.gain_treasure(loot) if loot > 0
 							player.run_hook(:extra_treasure)
@@ -186,7 +215,6 @@ module GauntletOfFools
 							damage_multiplier.times { player.run_hook(:extra_damage) }
 						end
 					else
-						player.gain(:dodged_this_round)
 						Logger.log "%s dodges." % [player.name]
 					end
 				end

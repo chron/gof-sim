@@ -15,7 +15,7 @@ puts
 8.upto(25) do |defense|
 	print '%3i' % defense
 	1.upto(7) do |dice|
-		print ' %5.3f' % GauntletOfFools::Player::CHANCE_TO_HIT[[dice,0,1,defense]]
+		print ' %5.3f' % GauntletOfFools::Player::CHANCE_TO_HIT[[dice,0,1,1,defense]]
 	end
 	puts
 end

@@ -1,5 +1,5 @@
 module GauntletOfFools
-	PERMANENT_EFFECTS = [:poison, :hangover, :blindfolded].freeze
+	PERMANENT_EFFECTS = [:poison, :hangover, :blindfolded].freeze # TODO: refactor this away, use #gain_permanent_effect or something similar
 
 	class Option < Struct.new(:hero, :weapons, :current_owner, :brags, :parent_opt)
 		def inspect
@@ -24,17 +24,9 @@ module GauntletOfFools
 	end
 
 	class Player
-		attr_reader :name, :hero, :weapons, :brags, :age, :opponents
-		attr_accessor :wounds, :treasure, :hero_tokens
-		attr_accessor :current_encounter
-
-		def weapon_tokens # FIXME: temporary
-			@weapon_tokens[0]
-		end
-
-		def weapon_tokens= v
-			@weapon_tokens[0] = v
-		end
+		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :hero_tokens, :weapon_tokens
+		attr_accessor :wounds, :treasure
+		attr_accessor :current_encounter, :delegates, :opponents
 
 		DISTRIBUTION = Hash.new do |h,dice|
 			h[dice] = if dice <= 0
@@ -60,12 +52,14 @@ module GauntletOfFools
 			@hero = hero
 			@weapons = [*weapons]
 
+			@delegates = []
 			@opponents = []
 
 			@ai = BasicAI.new(self)
 
 			@wounds, @treasure, @age = 0, 0, 0
 			@current_encounter = []
+			@fight_queue = []
 
 			@current_effects, @next_turn_effects = [], []
 			@tokens = Hash.new { |h,k| h[k] = [0, 0]}
@@ -75,12 +69,19 @@ module GauntletOfFools
 			@weapon_tokens = @weapons.map(&:tokens)
 		end
 
+		def self.from_names name, hero, weapons, brags=[]
+			args = name, Hero[hero], [*weapons].map { |w| Weapon[w] }, [*brags].map { |b| Brag[b] }
+			raise args.inspect if args.flatten.any? { |a| a.nil? } 
+
+			new(*args)
+		end
+
 		def run_hook hook, *data
-			r = [@current_encounter, @hero, @weapons, @brags].flatten.compact.inject(data) do |d,obj| 
-				iv = obj.call_hook(hook, self, current_encounter, *d)
+			r = [@current_encounter, @hero, @delegates, @weapons, @brags].flatten.inject(data) do |d,obj| 
+				iv = obj && obj.call_hook(hook, self, current_encounter, *d)
 				iv ? [iv] : d
 			end
-			r.size == 1 ? r.first : r # FIXME
+			r.size == 1 ? r.first : r
 		end
 
 		def to_s
@@ -92,8 +93,13 @@ module GauntletOfFools
 			s
 		end
 
+		def queue_fight encounter=nil
+			@fight_queue << encounter
+		end
+
 		def chance_to_hit defense, bonus_dice=0 # for simulation purposes
 			return 1.0 if has? :kill_next
+			# FIXME: one arm tied?
 			CHANCE_TO_HIT[[attack_dice+bonus_dice, bonus_attack, attack_factor, dice_factor, defense]]
 		end
 
@@ -131,33 +137,64 @@ module GauntletOfFools
 			@current_effects.delete_if { |e| effect == e }
 		end
 
-		def discard_all_penalty_tokens
+		def discard_all_penalty_tokens # TODO: check interactions with getting a -1 penalty when you already have a +1 bonus
 			Logger.log '%s discards all penalty tokens.' % [@name]
 			@tokens.each_key { |k| @tokens[k][1] = 0 }
 		end
 
 		def gain_hero_token n=1
-			@hero_tokens += n
-			Logger.log '%s gains %s hero token%s (%s remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @hero_tokens]
+			n = -@hero_tokens if (n + @hero_tokens) < 0
+ 
+ 			if n != 0
+				@hero_tokens += n
+				Logger.log '%s %s %s hero token%s (%s remaining).' % [@name, n > 0 ? 'gains' : 'loses', n.abs==1 ? 'a' : n.abs, n.abs==1 ? '' : 's', @hero_tokens]
+			end
+
 			true
 		end
 
-		def gain_weapon_token n=1
-			@weapon_tokens[0] += n # FIXME: player's choice sometimes
-			Logger.log '%s gains %s weapon token%s (%s remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens*?/]
+		def gain_weapon_token n=1, weapon=nil
+			i = if @weapons.size > 1
+				weapon ? @weapons.index { |w| w.name == weapon } : 0 # FIXME DECIDE
+			else
+				0
+			end
+
+			n = -@weapon_tokens[i] if (n + @weapon_tokens[i]) < 0
+
+			if n != 0
+				@weapon_tokens[i] += n 
+				Logger.log '%s %s %s weapon token%s %s(%s remaining).' % [
+					@name, n > 0 ? 'gains' : 'loses', n.abs==1 ? 'a' : n.abs, n.abs==1 ? '' : 's', @weapons.size > 1 ? "(for #{@weapons[i]}) " : '', @weapon_tokens*?/
+				]
+			end
+
 			true
 		end
 
-		# FIXME: needs to be from the specific weapon
-		def spend_weapon_token n=1 # currently all or nothing
+		# currently all or nothing
+		def spend_weapon_token n=1, weapon=nil 
 			return false if n <= 0
 			return false if has? :no_weapon_tokens
 
-			if @weapon_tokens[0] >= n
-				@weapon_tokens[0] -= n
-				Logger.log '%s spends %s weapon token%s (%s remaining).' % [@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapon_tokens*?/]
+			i = if @weapons.size > 1
+				weapon ? @weapons.index { |w| w.name == weapon } : 0 # FIXME DECIDE
+			else
+				0
+			end
+
+			if @weapon_tokens[i] >= n
+				@weapon_tokens[i] -= n
+				Logger.log '%s spends %s weapon token%s %s(%s remaining).' % [
+					@name, n==1 ? 'a' : n, n==1 ? '' : 's', @weapons.size > 1 ? "(from #{@weapons[i]}) " : '', @weapon_tokens*?/
+				]
 				true
 			end
+		end
+
+		# FIXME: returns sum of all weapons if you have multiples, make sure this works
+		def weapon_tokens weapon=nil
+			weapon ? @weapon_tokens[@weapons.index { |w| w.name == weapon }] : @weapon_tokens.sum
 		end
 
 		def spend_hero_token n=1
@@ -171,7 +208,7 @@ module GauntletOfFools
 		end
 
 		def gain_treasure amount
-			Logger.log '%s has %s %i coin%s.' % [@name, amount > 0 ? 'gained' : 'lost', amount.abs, amount == 1 ? '' : 's']
+			Logger.log '%s %s %i coin%s.' % [@name, amount > 0 ? 'gains' : 'loses', amount.abs, amount == 1 ? '' : 's']
 			@treasure += amount
 		end
 

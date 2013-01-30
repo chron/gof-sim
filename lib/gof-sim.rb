@@ -7,3 +7,5 @@ require 'gof-sim/encounter'
 require 'gof-sim/basic-ai'
 require 'gof-sim/player'
 require 'gof-sim/game'
+
+# TODO: one_use_die

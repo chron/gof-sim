@@ -25,16 +25,26 @@ module GauntletOfFools
 			@instant = true
 		end
 
-		Encounter.new('Banshee', 23, 16, 1, 4) {
-			# damage = choose 1 wound or -3 def
+		Encounter.new('Banshee', 23, 16, 0, 4) {
+			hooks(:extra_damage) { |player, encounter| player.decide(:take_wound_from_banshee) ? player.wound(1) : player.gain_bonus(:defense, -3) }
 		}
 
 		Encounter.new('Behemoth', 20, 21, 1, 4) {
-			# You may pay weapon token to skip this fight. 
+			hooks(:before_encounter) { |player, encounter| 
+				if player.weapon_tokens >= 1 && player.decide(:skip_behemoth) 
+					player.gain_weapon_token(-1)
+					player.gain(:skip_encounter)
+					Logger.log '%s pays 1 weapon token to skip the fight.' % [player.name]
+				end
+			}
 		}
 
 		Encounter.new('Brass Golem', 16, 15, 1, 2) {
 			hooks(:extra_treasure) { |player| player.has?(:dodged_this_turn) && player.gain_treasure(2) }
+		}
+
+		Encounter.new('Cache') {
+			hooks(:instead_of_combat) { |player| player.gain_treasure 2 }
 		}
 
 		Encounter.new('Dancing Sword', 21, 8, 1, 3) {
@@ -44,6 +54,26 @@ module GauntletOfFools
 		Encounter.new('Doppelganger', 14, 0, 1, 3) {# Doppelgänger
 			hooks(:before_encounter) { |player, encounter| self.defense = player.defense } # this is so it displays correctish at start
 			hooks(:after_rolling) { |player, encounter, rolls| self.defense = player.defense; rolls } # FIXME: or return nil?
+		}
+
+		Encounter.new('Extra Bitey') {
+			instant!
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.damage *= 2 } # FIXME: use take_double_damage
+		}
+
+		Encounter.new('Extra Scary') {
+			instant!
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.attack += 3 }
+		}
+
+		Encounter.new('Extra Tough') {
+			instant!
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.defense += 3 }
+		}
+
+		Encounter.new('Extra Wealthy') {
+			instant!
+			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.treasure += 3 } # check this value
 		}
 
 		Encounter.new('Fire Elemental', 18, 14, 1, 0) {
@@ -63,11 +93,11 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Giant Scorpion', 19, 12, 2, 3) {
-			hooks(:extra_damage) { |player| player.gain :cannot_die }
+			hooks(:extra_damage) { |player| player.gain(:cannot_die) }
 		}
 
 		Encounter.new('Giant Spider', 17, 19, 0, 3) {
-			hooks(:extra_damage) { |player| player.gain :poison }
+			hooks(:extra_damage) { |player| player.gain(:poison) }
 		}
 
 		Encounter.new('Giant Toad', 14, 12, 1, 2) {
@@ -82,6 +112,10 @@ module GauntletOfFools
 
 		Encounter.new('Goblin', 13, 10, 1, 2)
 
+		Encounter.new('Gold Vein') { 
+			hooks(:instead_of_combat) { |player| player.gain_treasure(player.calculate_attack(player.roll(player.attack_dice)) / 5) } # FIXME: doesn't run hooks
+		}
+
 		Encounter.new('Gopher', 6, 7, 0, 1)
 
 		Encounter.new('Griffin', 11, 13, 1, 3) {
@@ -89,33 +123,59 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Guardian', 10, 16, 1, 0) {
-			# treasure = Turn over an Encounter that only you get to use, if you want. (skip and discard modifiers)
+			hooks(:extra_treasure) { |player, encounter| player.gain(:optional_encounter) && player.queue_fight }
+		}
+
+		Encounter.new('Healing Pool') {
+			hooks(:instead_of_combat) { |player| player.heal(1) } # penalties?
 		}
 
 		Encounter.new('Hellhound', 16, 10, 1, 3) {
-			# treasure -> you may take 1 wound for extra 3 gold
+			hooks(:extra_treasure) { |player| player.decide(:take_extra_hellhound_treasure) && player.wound(1) && player.gain_treasure(3) }
+		}
+
+		Encounter.new('Magic Pool') {
+			hooks(:instead_of_combat) { |player| player.gain_weapon_token; player.gain_hero_token } # should be a choice
 		}
 
 		Encounter.new('Mercenary', 18, 14, 2, 4) {
-			# you may pay 1 to skip this fight
+			hooks(:before_encounter) { |player, encounter| 
+				if player.treasure >= 1 && player.decide(:skip_mercenary) 
+					player.gain_treasure(-1)
+					player.gain(:skip_encounter)
+					Logger.log '%s pays 1 coin to skip the fight.' % [player.name]
+				end
+			}
 		}
 
 		Encounter.new('Minotaur', 20, 14, 1, 4)
 
 		Encounter.new('Mummy', 18, 14, 0, 3) {
-			hooks(:extra_damage) { |player| player.next_turn :take_double_damage }
+			hooks(:extra_damage) { |player| player.next_turn(:take_double_damage) }
 		}
 
 		Encounter.new('Ogre', 16, 13, 1, 3)
 
 		Encounter.new('Skelephant', 13, 8, 1, 2)
 
+		Encounter.new('Side Passage') {
+			hooks(:encounter_selection) { |game|  # FIXME: existing mods? do mods stack onto second card?
+				@options = [game.draw_encounter[0], game.draw_encounter[0]].compact # FIXME: what happens if you run out of cards?
+				Logger.log 'Side Passage options: %s.' % [@options*' or ']
+			} 
+			hooks(:instead_of_combat) { |player| player.queue_fight(player.decide(:which_encounter, *@options)) } # FIXME: is it ok to assume #decide will return a valid selection
+		}
+
 		Encounter.new('Slime Monster', 22, 18, 1, 4) {
 			hooks(:extra_damage) { |player| player.gain_bonus(:dice, -1) }
 		}
 
-		Encounter.new('Troll', 20, 15, 1, 4) {
-			# If you don't Kill this, fight it a 2nd time.
+		Encounter.new('Spear Trap') { # TODO: check this in relation to damage factors, eg mummy?
+			hooks(:instead_of_combat) { |player| !player.has?(:dodge_next_trap) && player.wound(1) }
+		}
+
+		Encounter.new('Troll', 20, 15, 1, 4) { # FIXME: does the second version still have mods?
+			hooks(:after_encounter) { |player, encounter| !player.has?(:regenerated_troll) && !player.has?(:killed_this_round) && player.gain(:regenerated_troll) && player.queue_fight(encounter) }
 		}
 
 		Encounter.new('Unicorn', 12, 8, 1, 0) {
@@ -135,84 +195,17 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Wolf', 12, 11, 1, 1)
-
-		Encounter.new('Extra Scary') {
-			instant!
-			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.attack += 3 }
-		}
-
-		Encounter.new('Extra Bitey') {
-			instant!
-			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.damage *= 2 } # FIXME: use take_double_damage
-		}
-
-		Encounter.new('Extra Tough') {
-			instant!
-			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.defense += 3 }
-		}
-
-		Encounter.new('Extra Wealthy') {
-			instant!
-			hooks(:modifies_next_encounter) { |encounter| encounter.add_prefix(name); encounter.treasure += 3 } # check this value
-		}
-
-		#Encounter.new('Side Passage')
-
-		Encounter.new('Cache') {
-			hooks(:instead_of_combat) { |player| player.gain_treasure 2 }
-		}
-
-		Encounter.new('Gold Vein') { 
-			hooks(:instead_of_combat) { |player| player.gain_treasure(player.calculate_attack(player.roll(player.attack_dice)) / 5) } # FIXME: doesn't run hooks
-		}
-			# roll an attack, 1 gold per 5 attack ( round down)
-
-		Encounter.new('Healing Pool') {
-			hooks(:instead_of_combat) { |player| player.heal 1 } # penalties?
-		}
-
-		Encounter.new('Magic Pool') {
-			hooks(:instead_of_combat) { |player| player.gain_weapon_token; player.gain_hero_token } # should be a choice
-		}
-
-		Encounter.new('Spear Trap') { # TODO: THIS CAN BE DODGED BY THIEVES
-			hooks(:instead_of_combat) { |player| player.wound 1 }
-		}
-
 =begin
-Giant Crab
 Titan
 Mushroom Man	
 Ooze
-Doppelgänger	
 Demon 
-Side Passage
 Carniv. Plant
 Shadow
-Gopher
 Bandit
-Hellhound
-Unicorn
-Giant
-Danc. Sword
-Brass Golem
-Will-o-wisp
 Bee Swarm
-Griffin
-Wolf
 Pixie
-Gold Vein
 =end
-
-#		| Extra Bitey 	| Giant Crab		| Titan			| Mushroom Man	| Giant Toad |
-# 		| Healing Pool 	| Ooze			| Doppelgänger	| Mercenary		| Giant Scorp. |
-# 		| Vampire 		| Demon 			| Gladiator (P)	| Guardian		| Side Passage |
-# 		| Mummy 			| Carniv. Plant	| Shadow 		| Ogre			| Gopher |
-# 		| Extra Tough 	| Skelephant 	| Bandit 		| Witch			| Hellhound |
-# 		| Unicorn 		| Minotaur 		| Giant 			| Troll			| Danc. Sword |
-# 		| Extra Wealthy | Brass Golem 	| Extra Scary 	| Will-o-wisp	| Banshee |
-# 		| Goblin 		| Giant Turtle 	| Spear Trap 	| Magic Pool	| Bee Swarm |
-# 		| Giant Cockr. 	| Griffin 		| Wolf			| Pixie 		| Slime Monster	|
-# 		| Behemoth 		| Fire Elemental	| Gargoyle 		| Gold Vein		| Cache |
 	end
 end
+

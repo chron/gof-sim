@@ -8,7 +8,6 @@ def sim(trials, *opts)
 		GauntletOfFools::EncounterPhase.new.run(*players)
 
 		players.each do |p|
-			# FIXME: dumb
 			o = opts.find { |o| o.hero == p.hero && o.weapons == p.weapons && o.brags == p.brags }
 			results[o] << p.treasure
 		end
@@ -27,7 +26,7 @@ players.cycle do |p|
 
 	#puts '%s choosing: ' % [p]
 	choices = b.options.map { |o| o.current_owner ? o.with_any_new_brag : o.copy }.flatten
-	rated_choices = sim(2000 / choices.size, *choices) #choices.map { |c| [c, 10]}.sort_by { |k,v| -v }
+	rated_choices = sim(2000 / choices.size, *choices)
 
 	#rated_choices.sort_by { |k,v| -v }.each_with_index { |(o,v),i| puts '%2i %5.2f %-p' % [i, v, o] }
 	#puts
