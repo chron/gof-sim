@@ -25,6 +25,12 @@ module GauntletOfFools
 			@instant = true
 		end
 
+		Encounter.new('Bandit', 14, 14, 1, 3)
+			# treasure -> get 1 weapon token
+
+		Encounter.new('Bee Swarm', 10, 6, 1, 0)
+			# treasure -> choose 2 gold or 1 hero token
+
 		Encounter.new('Banshee', 23, 16, 0, 4) {
 			hooks(:extra_damage) { |player, encounter| player.decide(:take_wound_from_banshee) ? player.wound(1) : player.gain_bonus(:defense, -3) }
 		}
@@ -47,9 +53,14 @@ module GauntletOfFools
 			hooks(:instead_of_combat) { |player| player.gain_treasure 2 }
 		}
 
+		Encounter.new('Carnivorous Plant', 10, 16, 1, 1)
+
 		Encounter.new('Dancing Sword', 21, 8, 1, 3) {
 			hooks(:extra_treasure) { |player| player.gain_bonus(:attack, 1) }
 		}
+
+		Encounter.new('Demon', 17, 17, 1, 4)
+			# no hero tokens or weapon tokens this fight
 
 		Encounter.new('Doppelganger', 14, 0, 1, 3) {# Doppelgänger
 			hooks(:before_encounter) { |player, encounter| self.defense = player.defense } # this is so it displays correctish at start
@@ -138,7 +149,7 @@ module GauntletOfFools
 			hooks(:instead_of_combat) { |player| player.gain_weapon_token; player.gain_hero_token } # should be a choice
 		}
 
-		Encounter.new('Mercenary', 18, 14, 2, 4) {
+		Encounter.new('Mercenary', 18, 20, 2, 4) {
 			hooks(:before_encounter) { |player, encounter| 
 				if player.treasure >= 1 && player.decide(:skip_mercenary) 
 					player.gain_treasure(-1)
@@ -154,7 +165,19 @@ module GauntletOfFools
 			hooks(:extra_damage) { |player| player.next_turn(:take_double_damage) }
 		}
 
+		Encounter.new('Mushroom Man', 15, 14, 2, 2)
+			# treasure -> heal 1 wound after combat
+
 		Encounter.new('Ogre', 16, 13, 1, 3)
+
+		Encounter.new('Ooze', 20, 11, 1, 3)
+			# damage -> lose 1 weapon token
+
+		Encounter.new('Pixie', 14, 11, 0, 2)
+			# damage -> lose 3 gold
+
+		Encounter.new('Shadow', 12, 9, 0, 1)
+			# damage: 2 if you have no more than 1, otherwise 0
 
 		Encounter.new('Skelephant', 13, 8, 1, 2)
 
@@ -173,6 +196,8 @@ module GauntletOfFools
 		Encounter.new('Spear Trap') { # TODO: check this in relation to damage factors, eg mummy?
 			hooks(:instead_of_combat) { |player| !player.has?(:dodge_next_trap) && player.wound(1) }
 		}
+
+		Encounter.new('Titan', 22, 24, 1, 5)
 
 		Encounter.new('Troll', 20, 15, 1, 4) { # FIXME: does the second version still have mods?
 			hooks(:after_encounter) { |player, encounter| !player.has?(:regenerated_troll) && !player.has?(:killed_this_round) && player.gain(:regenerated_troll) && player.queue_fight(encounter) }
@@ -195,17 +220,6 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Wolf', 12, 11, 1, 1)
-=begin
-Titan
-Mushroom Man	
-Ooze
-Demon 
-Carniv. Plant
-Shadow
-Bandit
-Bee Swarm
-Pixie
-=end
 	end
 end
 
