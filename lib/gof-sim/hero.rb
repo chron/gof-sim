@@ -9,24 +9,26 @@ module GauntletOfFools
 			super(name)
 		end
 
-		Hero.new('Adventurer', 15, 2)
-			# token -> after an encounter, once per encounbter, visit that encounter again
-
-		Hero.new('Alchemist', 14, 2) { # FIXME: need AI hook for this? # FIXME: from the FAQ, this can heal spider venom in the same turn its applied
-			hooks(:after_encounter) { |player, encounter| player.has?(:killed_this_round) && player.has?(:dodged_this_round) && player.wounds > 0 && player.spend_hero_token && player.heal(1) }
+		Hero.new('Adventurer', 15, 2) {
+			hooks(:after_encounter) { |player, encounter| !player.has?(:second_adventure) && player.decide(:use_adventurer) && player.spend_hero_token && player.gain(:second_adventure) && player.queue_fight(encounter)}
 		}
 
-		Hero.new('Armorer', 13, 2) { # FIXME: AI hook
-			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.gain_bonus(:defense, 3) }
+		Hero.new('Alchemist', 14, 2) { # FIXME: need AI hook for this?
+			hooks(:end_of_turn) { |player, encounter| player.has?(:killed_this_round) && player.has?(:dodged_this_round) && player.wounds > 0 && player.spend_hero_token && player.heal(1) }
 		}
 
-		Hero.new('Artificer', 15, 2) { # FIXME: AI hook
-			hooks(:instead_of_treasure) { |player| player.spend_hero_token && player.gain_bonus(:dice, 1) }
+		Hero.new('Armorer', 13, 2) {
+			hooks(:instead_of_treasure) { |player| player.decide(:use_armorer) && player.spend_hero_token && player.gain_bonus(:defense, 3) }
 		}
 
-		Hero.new('Avenger', 16, 2) {
+		Hero.new('Artificer', 15, 2) {
+			hooks(:instead_of_treasure) { |player| player.decide(:use_artificer) && player.spend_hero_token && player.gain_bonus(:dice, 1) }
+		}
+
+		Hero.new('Avenger', 16, 2) { #  NOTE: SHOULD include reanimated zombies
+			hooks(:after_encounter) { |player| player.opponents.count { |p| p.dead? }.times { player.gain(:fallen_comrade) }} # has to have died on previous turns
 			hooks(:after_rolling) { |player, encounter, rolls|
-				n = player.opponents.count { |p| p.dead? } # FIXME: dead on PREVIOUS turns FIXME: should include reanimated zombies
+				n = player.effects.count(:fallen_comrade)
 				player.decide(:use_avenger, rolls) && player.gain_temp(:attack,3*n) && rolls
 			}
 		}
@@ -64,7 +66,7 @@ module GauntletOfFools
 		}
 
 		Hero.new('Priest', 14, 2) { # FIXME: zero attack = don't attack?
-			hooks(:before_encounter) { |player| player.wounds > 0 && player.decide(:use_priest) && player.spend_hero_token && player.heal(1) && player.gain(:zero_attack) && player.gain(:no_weapon_tokens)}
+			hooks(:before_encounter) { |player| player.wounds > 0 && player.decide(:use_priest) && player.spend_hero_token && player.heal(1) && player.gain(:zero_attack, :no_weapon_tokens)}
 		}
 
 		Hero.new('Prospector', 15, 0) {

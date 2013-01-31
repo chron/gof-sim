@@ -83,7 +83,7 @@ module GauntletOfFools
 				p.run_hook(:at_start) 
 			end
 
-			Logger.log('New dungeon: %s' % [players.map(&:name)*'/'])
+			# Logger.log('New dungeon: %s' % [players.map(&:name)*'/'])
 
 			until @encounters.empty?
 				encounter, encounter_mods = *draw_encounter
@@ -119,6 +119,13 @@ module GauntletOfFools
 						Logger.log ('%s vs %s (%.2f%% chance to hit)') % [player.name, new_encounter.name, 100 * player.chance_to_hit(new_encounter.defense)] if !new_encounter.non_combat?
 						fight(player, new_encounter)
 					end
+
+					if player.has?(:poison) && !player.has?(:recently_poisoned)
+						Logger.log 'Poison courses through %s\'s veins.' % [player.name]
+						player.wound(1)
+					end
+
+					player.run_hook(:end_of_turn)
 				end
 
 				(players.select { |p| p.dead? } - dead_players).each do |p|
@@ -149,7 +156,7 @@ module GauntletOfFools
 				if encounter.hooks?(:instead_of_combat) # FIXME: could this be used for wizard?
 					encounter.call_hook(:instead_of_combat, player)
 				else
-					player.run_hook(:before_rolling) # FIXME: one-use dice go hereish
+					player.run_hook(:before_rolling)
 
 					player_hits = if player.has? :kill_next
 						Logger.log "%s kills %s using a power." % [player.name, encounter.name]
@@ -220,8 +227,7 @@ module GauntletOfFools
 				end
 
 				if !encounter.instant
-					player.wound(1) if player.has? :poison # VVV this
-					player.run_hook(:after_encounter) # FIXME: after_encounter hooks if encounter is skipped?
+					player.run_hook(:after_encounter)
 				end
 
 				player.current_encounter = nil

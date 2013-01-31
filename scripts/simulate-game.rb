@@ -1,6 +1,12 @@
 require '../lib/gof-sim'
 
+ROUGH_SOLO_VALUATION = Hash.new do |h,(opt,prec)|
+	h[[opt, prec]] = sim(prec, opt)[opt]
+end
+
 def sim(trials, *opts)
+	GauntletOfFools::Logger.logging = false
+
 	results = Hash.new { |h,k| h[k] = [] }
 
 	trials.times do |t|
@@ -13,20 +19,21 @@ def sim(trials, *opts)
 		end
 	end
 
+	GauntletOfFools::Logger.logging = true
+
 	Hash[results.map { |k,v| [k, v.sum.to_f / v.size]}]
 end
 
 players = %w(One Two Three Four)
 b = GauntletOfFools::BragPhase.new *players
 
-GauntletOfFools::Logger.logging = false
 players.cycle do |p|
 	break if b.finished?
 	next if b.player_assigned?(p)
 
 	#puts '%s choosing: ' % [p]
 	choices = b.options.map { |o| o.current_owner ? o.with_any_new_brag : o.copy }.flatten
-	rated_choices = sim(2000 / choices.size, *choices)
+	rated_choices = choices.map { |c| [c, ROUGH_SOLO_VALUATION[[c, 500]]] }
 
 	#rated_choices.sort_by { |k,v| -v }.each_with_index { |(o,v),i| puts '%2i %5.2f %-p' % [i, v, o] }
 	#puts
@@ -37,7 +44,6 @@ players.cycle do |p|
 
 	b.bid p, choice, *choice.brags
 end
-GauntletOfFools::Logger.logging = true
 
 e = GauntletOfFools::EncounterPhase.new
 players = b.create_players.sort_by { |p| players.index(p.name) }

@@ -66,6 +66,26 @@ module GauntletOfFools
 			encounters.first # FIXME
 		end
 
+		# This will only offer weapons with tokens available
+		def decide_which_weapon_token_to_use weapons
+			weapons[0]
+		end
+
+		def decide_which_weapon_to_gain_token_for
+			@player.weapons[0]
+		end
+
+		def decide_how_many_times_to_use_one_use_die
+			return 0 if @player.has?(:zero_attack)
+			return @player.bonus(:one_use_die) if about_to_die?
+
+			0.upto(@player.bonus(:one_use_die)) do |v| 
+				return v if kill_chance_with_more_dice(v) >= 0.75
+			end
+
+			return 0
+		end
+
 		# FIXME: ugly
 		def decide_whether_to_visit_encounter
 			(@encounter.non_combat? && @encounter.name != 'Spear Trap') || !getting_hit
@@ -76,6 +96,10 @@ module GauntletOfFools
 		end
 
 		# Encounter decisions
+		def decide_whether_to_take_gold_from_bees
+			%w(Barbarian Armsmaster).include?(@player.hero.name)
+		end
+
 		def decide_whether_to_take_wound_from_banshee
 			!about_to_die? || @player.defense <= 10
 		end
@@ -89,6 +113,18 @@ module GauntletOfFools
 		end
 
 		# Hero decisions
+		def decide_whether_to_use_adventurer
+			about_to_die? || (!getting_hit && kill_chance > 0.75 && @encounter.hooks?(:extra_treasure)) # FIXME: cockroach
+		end
+
+		def decide_whether_to_use_armorer
+			true
+		end
+
+		def decide_whether_to_use_artificer
+			true
+		end
+
 		def decide_whether_to_use_avenger rolls
 			n = @player.opponents.count { |p| p.dead? }
 			return false if @player.calculate_attack(rolls) >= @encounter.defense

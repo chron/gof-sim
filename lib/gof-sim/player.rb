@@ -1,5 +1,11 @@
 module GauntletOfFools
 	PERMANENT_EFFECTS = [:poison, :hangover, :blindfolded].freeze # TODO: refactor this away, use #gain_permanent_effect or something similar
+	ONE_TIME_DIE = GameObject.new('One-time Die') { 
+		hooks(:before_rolling) { |player, encounter| 
+			n = player.decide(:use_one_use_die)
+			player.gain_bonus(:one_use_die, -n) && player.gain_temp(:dice, n) 
+		}
+	}
 
 	class Option < Struct.new(:hero, :weapons, :current_owner, :brags, :parent_opt)
 		def inspect
@@ -77,7 +83,9 @@ module GauntletOfFools
 		end
 
 		def run_hook hook, *data
-			r = [@current_encounter, @hero, @delegates, @weapons, @brags].flatten.inject(data) do |d,obj| 
+			# FIXME: find a better place for t
+			t = @tokens[:one_use_die].first > 0 ? ONE_TIME_DIE : nil
+			r = [@hero, @current_encounter, @delegates, @weapons, @brags, t].flatten.inject(data) do |d,obj| 
 				iv = obj && obj.call_hook(hook, self, current_encounter, *d)
 				iv ? [iv] : d
 			end
@@ -99,7 +107,7 @@ module GauntletOfFools
 
 		def chance_to_hit defense, bonus_dice=0 # for simulation purposes
 			return 1.0 if has? :kill_next
-			# FIXME: one arm tied?
+			# FIXME: currently ignores one arm tied
 			CHANCE_TO_HIT[[attack_dice+bonus_dice, bonus_attack, attack_factor, dice_factor, defense]]
 		end
 
@@ -116,7 +124,7 @@ module GauntletOfFools
 			@temp_tokens.each_key { |k| @temp_tokens[k] = 0 }
 			@age += 1
 			@current_effects.delete_if { |e| !PERMANENT_EFFECTS.include?(e) }
-			@next_turn_effects.each { |e| gain e }
+			@next_turn_effects.each { |e| gain(e) }
 			@next_turn_effects.clear
 		end
 
@@ -124,9 +132,9 @@ module GauntletOfFools
 			@current_effects
 		end
 
-		def gain effect
-			Logger.log '%s gains an effect: %s' % [@name, effect]
-			@current_effects << effect
+		def gain *effects
+			effects.each { |e| Logger.log '%s gains an effect: %s' % [@name, e] }
+			@current_effects.concat(effects)
 		end
 
 		def has? effect
@@ -147,7 +155,7 @@ module GauntletOfFools
  
  			if n != 0
 				@hero_tokens += n
-				Logger.log '%s %s %s hero token%s (%s remaining).' % [@name, n > 0 ? 'gains' : 'loses', n.abs==1 ? 'a' : n.abs, n.abs==1 ? '' : 's', @hero_tokens]
+				log_gain_message('hero token', n, " (#{@hero_tokens} remaining)")
 			end
 
 			true
@@ -155,7 +163,22 @@ module GauntletOfFools
 
 		def gain_weapon_token n=1, weapon=nil
 			i = if @weapons.size > 1
-				weapon ? @weapons.index { |w| w.name == weapon } : 0 # FIXME DECIDE
+				if weapon
+					@weapons.index { |w| w.name == weapon }
+				else
+					if n < 0 # If we're reducing tokens, check which weapons have tokens available
+						weapons_with_tokens = @weapon_tokens.map.with_index { |v,i| i if v > 0 }.compact
+						if weapons_with_tokens.empty?
+							0 # TODO: check this is ok
+						elsif weapons_with_tokens.size == 1
+							weapons_with_tokens.first
+						else
+							@weapons.index(decide(:which_weapon_token_to_use, weapons_with_tokens.map { |i| @weapons[i] }))
+						end
+					else
+						@weapons.index(decide(:which_weapon_to_gain_token_for))
+					end
+				end
 			else
 				0
 			end
@@ -163,22 +186,22 @@ module GauntletOfFools
 			n = -@weapon_tokens[i] if (n + @weapon_tokens[i]) < 0
 
 			if n != 0
-				@weapon_tokens[i] += n 
-				Logger.log '%s %s %s weapon token%s %s(%s remaining).' % [
-					@name, n > 0 ? 'gains' : 'loses', n.abs==1 ? 'a' : n.abs, n.abs==1 ? '' : 's', @weapons.size > 1 ? "(for #{@weapons[i]}) " : '', @weapon_tokens*?/
-				]
+				@weapon_tokens[i] += n
+				token_name = 'weapon token' + (@weapons.size > 1 ? " (for #{@weapons[i]})" : '')
+				log_gain_message(token_name, n, " (#{@weapon_tokens*?/} remaining).")
 			end
 
 			true
 		end
 
-		# currently all or nothing
-		def spend_weapon_token n=1, weapon=nil 
+		def spend_weapon_token n=1, weapon
+			raise 'NO WEAPON' if weapon.nil?
+
 			return false if n <= 0
 			return false if has? :no_weapon_tokens
 
 			i = if @weapons.size > 1
-				weapon ? @weapons.index { |w| w.name == weapon } : 0 # FIXME DECIDE
+				@weapons.index { |w| w.name == weapon }
 			else
 				0
 			end
@@ -199,6 +222,7 @@ module GauntletOfFools
 
 		def spend_hero_token n=1
 			return false if n <= 0
+			return false if has? :no_hero_tokens
 
 			if @hero_tokens >= n
 				@hero_tokens -= n
@@ -208,19 +232,19 @@ module GauntletOfFools
 		end
 
 		def gain_treasure amount
-			Logger.log '%s %s %i coin%s.' % [@name, amount > 0 ? 'gains' : 'loses', amount.abs, amount == 1 ? '' : 's']
+			amount = -treasure if amount + treasure < 0
+			log_gain_message('coin', amount)
 			@treasure += amount
 		end
 
 		def wound amount
-			Logger.log ("#{name} recieves #{amount} wound#{amount == 1 ? '' : 's'}.")
+			amount = -wounds if amount + wounds < 0
+			log_gain_message('wound', amount, '.', 'receives', 'is cured of')
 			@wounds += amount
 		end
 
 		def heal amount
-			actual_heal = [amount, wounds].min
-			Logger.log "%s is cured of %i wound%s." % [self.name, actual_heal, actual_heal == 1 ? '' : 's'] if actual_heal > 0
-			@wounds -= actual_heal
+			wound(-amount)
 		end
 
 		def dead?
@@ -228,13 +252,19 @@ module GauntletOfFools
 		end
 
 		def gain_bonus token_type, amount=1
-			Logger.log '%s %s %i %s permanently.' % [@name, amount > 0 ? 'gains' : 'loses', amount.abs, token_type] if amount != 0
+			log_gain_message(token_type, amount, ' permanently.')
 			@tokens[token_type][amount < 0 ? 1 : 0] += amount
 		end
 
 		def gain_temp token_type, amount # FIXME: TURN VERSUS ROUND
-			Logger.log '%s %s %i %s for the rest of the turn.' % [@name, amount > 0 ? 'gains' : 'loses', amount.abs, token_type] if amount != 0
+			log_gain_message(token_type, amount, ' for the rest of the turn.')
 			@temp_tokens[token_type] += amount
+		end
+
+		def log_gain_message object, amount, suffix='.', pos_verb='gains', neg_verb='loses' # FIXME: loses vs spends for non weapon tokens
+			if amount != 0
+				Logger.log '%s %s %i %s%s%s' % [name, amount > 0 ? pos_verb : neg_verb, amount.abs, object, amount.abs == 1 ? '' : 's', suffix]
+			end
 		end
 
 		def bonus token_type
@@ -266,12 +296,11 @@ module GauntletOfFools
 
 		def attack_factor
 			return 0 if has? :zero_attack
-			return 2 if has? :double_attack
-			1
+			return 2 ** effects.count(:double_attack)
 		end
 
 		def dice_factor
-			@weapons.any? { |w| w.name == 'Cleaver' } ? 4 : 1  # FIXME: hmm
+			@weapons.map(&:dice_factor).max # FIXME: hypothetical future interactions between multiple dice factors?
 		end
 
 		def roll number

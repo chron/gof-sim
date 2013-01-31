@@ -11,6 +11,11 @@ class Array
     	m = mean
     	Math.sqrt(map { |v| (v - m)**2 }.mean)
 	end
+
+	def median
+		s = sort
+		size % 2 == 0 ? (s[size/2] + s[size/2-1]) / 2.0 : s[size/2]
+	end
 end
 
 module GauntletOfFools
@@ -33,11 +38,11 @@ module GauntletOfFools
 
 	class GameObject
 		attr_accessor :name
-		attr_reader :unfinished, :instant
+		attr_reader :instant
 
 		def initialize name, &b
 			@name = name
-			@hooks = {}
+			@hooks = {} # FIXME: multiple hooks on the same GameObject/hook_name?
 
 			instance_eval(&b) if b
 

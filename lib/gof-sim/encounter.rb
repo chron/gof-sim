@@ -25,11 +25,13 @@ module GauntletOfFools
 			@instant = true
 		end
 
-		Encounter.new('Bandit', 14, 14, 1, 3)
-			# treasure -> get 1 weapon token
+		Encounter.new('Bandit', 14, 14, 1, 3) {
+			hooks(:extra_treasure) { |player| player.gain_weapon_token }
+		}
 
-		Encounter.new('Bee Swarm', 10, 6, 1, 0)
-			# treasure -> choose 2 gold or 1 hero token
+		Encounter.new('Bee Swarm', 10, 6, 1, 0) {
+			hooks(:extra_treasure) { |player, encounter| player.decide(:take_gold_from_bees) ? player.gain_treasure(2) : player.gain_hero_token }
+		}
 
 		Encounter.new('Banshee', 23, 16, 0, 4) {
 			hooks(:extra_damage) { |player, encounter| player.decide(:take_wound_from_banshee) ? player.wound(1) : player.gain_bonus(:defense, -3) }
@@ -59,8 +61,9 @@ module GauntletOfFools
 			hooks(:extra_treasure) { |player| player.gain_bonus(:attack, 1) }
 		}
 
-		Encounter.new('Demon', 17, 17, 1, 4)
-			# no hero tokens or weapon tokens this fight
+		Encounter.new('Demon', 17, 17, 1, 4) {
+			hooks(:before_encounter) { |player| player.gain(:no_weapon_tokens, :no_hero_tokens) }
+		}
 
 		Encounter.new('Doppelganger', 14, 0, 1, 3) {# Doppelgänger
 			hooks(:before_encounter) { |player, encounter| self.defense = player.defense } # this is so it displays correctish at start
@@ -108,7 +111,7 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Giant Spider', 17, 19, 0, 3) {
-			hooks(:extra_damage) { |player| player.gain(:poison) }
+			hooks(:extra_damage) { |player| player.gain(:poison, :recently_poisoned) }
 		}
 
 		Encounter.new('Giant Toad', 14, 12, 1, 2) {
@@ -117,9 +120,9 @@ module GauntletOfFools
 
 		Encounter.new('Giant Turtle', 9, 14, 1, 1)
 
-		Encounter.new('Gladiator', 15, 15, 1, 3) { # PROMO
-			# bet up to 5, receieve double
-		}
+		#Encounter.new('Gladiator', 15, 15, 1, 0) { # PROMO
+			#hooks(:before_rolling) { # bet up to 5, receieve double
+		#}
 
 		Encounter.new('Goblin', 13, 10, 1, 2)
 
@@ -165,19 +168,23 @@ module GauntletOfFools
 			hooks(:extra_damage) { |player| player.next_turn(:take_double_damage) }
 		}
 
-		Encounter.new('Mushroom Man', 15, 14, 2, 2)
-			# treasure -> heal 1 wound after combat
+		Encounter.new('Mushroom Man', 15, 14, 2, 2) {
+			hooks(:extra_treasure) { |player| player.heal(1) }
+		}
 
 		Encounter.new('Ogre', 16, 13, 1, 3)
 
-		Encounter.new('Ooze', 20, 11, 1, 3)
-			# damage -> lose 1 weapon token
+		Encounter.new('Ooze', 20, 11, 1, 3) {
+			hooks(:extra_damage) { |player| player.gain_weapon_token(-1) }
+		}
 
-		Encounter.new('Pixie', 14, 11, 0, 2)
-			# damage -> lose 3 gold
+		Encounter.new('Pixie', 14, 11, 0, 2) {
+			hooks(:extra_damage) { |player| player.gain_treasure(-3) }
+		}
 
-		Encounter.new('Shadow', 12, 9, 0, 1)
-			# damage: 2 if you have no more than 1, otherwise 0
+		Encounter.new('Shadow', 12, 9, 0, 1) {
+			hooks(:extra_damage) { |player| player.wounds <= 1 && player.wound(2) }
+		}
 
 		Encounter.new('Skelephant', 13, 8, 1, 2)
 
