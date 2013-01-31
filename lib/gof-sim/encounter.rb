@@ -4,9 +4,9 @@ module GauntletOfFools
 		attr_reader :instant
 
 		def initialize name, attack=0, defense=0, damage=0, treasure=0
-			super(name)
-
 			@attack, @defense, @damage, @treasure = attack, defense, damage, treasure
+
+			super(name)
 		end
 
 		def non_combat?

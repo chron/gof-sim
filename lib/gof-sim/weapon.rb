@@ -3,10 +3,10 @@ module GauntletOfFools
 		attr_reader :dice, :tokens, :dice_factor
 		
 		def initialize name, dice, tokens
-			super(name)
-
 			@dice, @tokens = dice, tokens
 			@dice_factor = 1
+
+			super(name)
 		end
 
 		# FIXME: would like a better way to do this
@@ -24,6 +24,10 @@ module GauntletOfFools
 
 		Weapon.new('Bow', 4, 2) {
 			hooks(:after_attack) { |player,encounter| player.has?(:killed_this_round) && player.decide(:use_bow) && spend_weapon_token(player) && player.gain(:dodge_next) }
+		}
+
+		Weapon.new('Cleaver', 1, 0) { # PROMO CARD
+			@dice_factor = 4
 		}
 
 		Weapon.new('Dagger', 3, 4) {
@@ -129,10 +133,6 @@ module GauntletOfFools
 
 		Weapon.new('Whip', 4, 2) {
 			hooks(:after_attack) { |player,encounter| !player.has?(:killed_this_round) && spend_weapon_token(player) && player.gain(:dodge_next) }
-		}
-
-		Weapon.new('Cleaver', 1, 0) { # PROMO CARD
-			@dice_factor = 4
 		}
 	end
 end

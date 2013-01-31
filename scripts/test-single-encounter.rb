@@ -7,7 +7,7 @@ require '../lib/gof-sim'
 #exit
 
 p =	[
-	GauntletOfFools::Player.from_names('Adv', 'Adventurer', 'Sword')
+	GauntletOfFools::Player.from_names('Adv', 'Adventurer', 'Cleaver')
 ]
 e = %w(Giant\ Toad Griffin).map { |n| GauntletOfFools::Encounter[n] }
 GauntletOfFools::EncounterPhase.test_encounter(*e).run(*p)

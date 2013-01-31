@@ -21,6 +21,10 @@ module GauntletOfFools
 			hooks(:instead_of_treasure) { |player| player.decide(:use_armorer) && player.spend_hero_token && player.gain_bonus(:defense, 3) }
 		}
 
+		Hero.new('Armsmaster', 14, 0) { # PROMO CARD
+			@number_of_weapons = 2
+		} 
+
 		Hero.new('Artificer', 15, 2) {
 			hooks(:instead_of_treasure) { |player| player.decide(:use_artificer) && player.spend_hero_token && player.gain_bonus(:dice, 1) }
 		}
@@ -102,10 +106,5 @@ module GauntletOfFools
 		Hero.new('Zombie', 13, 2) { # FIXME: getting hit by a giant scorpion should NOT let you play next turn for free
 			hooks(:encounter_while_dead) { |player, encounter| player.decide(:use_zombie) && player.spend_hero_token && player.gain(:cannot_die) }
 		}
-
-		# FIXME: hook for this maybe?
-		Hero.new('Armsmaster', 14, 0) {
-			@number_of_weapons = 2
-		} 
 	end
 end
