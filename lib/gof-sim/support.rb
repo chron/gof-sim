@@ -53,6 +53,10 @@ module GauntletOfFools
 			@name
 		end
 
+		def key
+			@name.downcase.tr(' ','_').intern
+		end
+
 		def <=> other
 			@name <=> other.name
 		end

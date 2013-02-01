@@ -45,6 +45,17 @@ players.cycle do |p|
 	b.bid p, choice, *choice.brags
 end
 
+=begin
+t = 10000
+r = Hash.new(0)
+t.times do
+	p = b.create_players
+	GauntletOfFools::EncounterPhase.new.run(*p)
+	p.each { |p| r[p.name] += p.treasure }
+end
+p r.map { |k,v| [k, v/t.to_f] }
+=end
+
 e = GauntletOfFools::EncounterPhase.new
 players = b.create_players.sort_by { |p| players.index(p.name) }
 

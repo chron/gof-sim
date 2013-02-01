@@ -58,6 +58,9 @@ module GauntletOfFools
 
 		def initialize
 			@encounters = Encounter.all.shuffle
+			@players = []
+			@current_mods = []
+			@turn = 0
 		end
 
 		def draw_encounter
@@ -74,6 +77,7 @@ module GauntletOfFools
 		def run *players
 			raise "no players" if players.empty?
 
+			@players = players
 			dead_players = []
 			current_mods = []
 			turn = 0
@@ -86,61 +90,64 @@ module GauntletOfFools
 			# Logger.log('New dungeon: %s' % [players.map(&:name)*'/'])
 
 			until @encounters.empty?
-				encounter, encounter_mods = *draw_encounter
-				break if encounter.nil?
-
-				current_mods += encounter_mods
-
-				if !encounter.non_combat?
-					current_mods.each { |em| em.call_hook(:modifies_next_encounter, encounter) }
-					current_mods.clear
-				end
-
-				turn += 1
-
-				Logger.log "Turn %i: %s" % [turn, encounter.display_name]
-
-				players.each do |p|
-					Logger.log ' * %s (%s) -> $%i' % [p, p.dead? ? 'dead' : p.wounds, p.treasure]
-				end
-
-				players.each do |player|
-					player.run_hook(:encounter_while_dead) if player.dead?
-					next if player.dead?
-
-					player.begin_turn
-					player.queue_fight(encounter)
-
-					until player.fight_queue.empty?
-						new_encounter = player.fight_queue.shift || draw_encounter.first
-						break if new_encounter.nil?
-						new_encounter.call_hook(:encounter_selection, self)
-
-						Logger.log ('%s vs %s (%.2f%% chance to hit)') % [player.name, new_encounter.name, 100 * player.chance_to_hit(new_encounter.defense)] if !new_encounter.non_combat?
-						fight(player, new_encounter)
-					end
-
-					if player.has?(:poison) && !player.has?(:recently_poisoned)
-						Logger.log 'Poison courses through %s\'s veins.' % [player.name]
-						player.wound(1)
-					end
-
-					player.run_hook(:end_of_turn)
-				end
-
-				(players.select { |p| p.dead? } - dead_players).each do |p|
-					dead_players << p
-					Logger.log("%s is defeated at age %i with %i coins." % [p.name, p.age, p.treasure])
-				end
-
+				play_turn
 				break if players.all? { |p| p.dead? }
 			end
 
 			players
 		end
 
+		def play_turn
+			dead_players = @players.select { |p| p.dead? }
+			encounter, encounter_mods = *draw_encounter
+			return if encounter.nil?
+
+			@current_mods += encounter_mods
+
+			if !encounter.non_combat?
+				@current_mods.each { |em| em.call_hook(:modifies_next_encounter, encounter) }
+				@current_mods.clear
+			end
+
+			@turn += 1
+
+			Logger.log "Turn %i: %s" % [@turn, encounter.display_name]
+
+			@players.each do |p|
+				Logger.log ' * %20s %11s %-28s %9s %p => %i' % [
+					p.name, p.hero, p.weapons*?+, p.dead? ? "dead @ #{p.age}" : p.wounds, p.instance_eval { @tokens }.merge(:weapon_tokens => p.weapon_tokens), p.treasure
+				]
+			end
+
+			@players.each do |player|
+				player.run_hook(:encounter_while_dead) if player.dead?
+				next if player.dead?
+
+				player.begin_turn
+				player.queue_fight(encounter)
+
+				until player.fight_queue.empty?
+					new_encounter = player.fight_queue.shift || draw_encounter.first
+					break if new_encounter.nil?
+					new_encounter.call_hook(:encounter_selection, self)
+
+					Logger.log ('%s vs %s (%.2f%% chance to hit)') % [player.name, new_encounter.name, 100 * player.chance_to_hit(new_encounter.defense)] if !new_encounter.non_combat?
+					fight(player, new_encounter)
+				end
+
+				player.run_hook(:end_of_turn)
+			end
+
+			(@players.select { |p| p.dead? } - dead_players).each do |p|
+				Logger.log("%s is defeated at age %i with %i coins." % [p.name, p.age, p.treasure])
+			end
+		end
+
+
 		def fight player, encounter
 			player.current_encounter = encounter
+			player.clear_effect :killed_this_round
+			player.clear_effect :dodged_this_round
 			
 			if player.has? :optional_encounter
 				if !player.decide(:visit_encounter)
@@ -200,30 +207,8 @@ module GauntletOfFools
 
 					player.gain(:dodged_this_round) if !encounter_hits
 
-					if player_hits
-						if player.hero.call_hook(:instead_of_treasure, player) # FIXME
-							Logger.log("%s uses a power instead of gaining treasure." % [player.name]) # FIXME
-						else
-							loot = encounter.treasure
-							loot -= 1 if player.has?(:blindfolded) && !player.has?(:ignore_brags) && !encounter_hits
-
-							player.gain_treasure(loot) if loot > 0
-							player.run_hook(:extra_treasure)
-						end
-					end
-
-					if encounter_hits
-						if player.hero.call_hook(:instead_of_damage, player, encounter)
-							Logger.log "%s uses a power instead of taking damage." % [player.name]
-						else
-							damage_multiplier = 2 ** player.effects.count(:take_double_damage)
-							player.wound(encounter.damage * damage_multiplier) if encounter.damage > 0
-
-							damage_multiplier.times { player.run_hook(:extra_damage) }
-						end
-					else
-						Logger.log "%s dodges." % [player.name]
-					end
+					player.receive_treasure_from(encounter) if player_hits
+					player.take_damage_from(encounter) if encounter_hits
 				end
 
 				if !encounter.instant

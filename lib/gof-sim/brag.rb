@@ -4,14 +4,14 @@ module GauntletOfFools
 	end
 
 	Brag.new('With a Hangover') {
-		hooks(:at_start) { |player| player.gain :hangover }
-		hooks(:defense) { |player, encounter, defense| (player.has?(:hangover) && !player.has?(:ignore_brags)) ? defense - 2 : defense }
-		hooks(:attack_dice) { |player, encounter, dice| (player.has?(:hangover)&& !player.has?(:ignore_brags)) ? dice - 2 : dice }
+		hooks(:at_start) { |player| player.gain_token(:hangover) }
+		hooks(:defense) { |player, encounter, defense| (player.tokens(:hangover) > 0 && !player.has?(:ignore_brags)) ? defense - 2 : defense }
+		hooks(:attack_dice) { |player, encounter, dice| (player.tokens(:hangover) > 0 && !player.has?(:ignore_brags)) ? dice - 1 : dice }
 
 		hooks(:extra_treasure) { |player, encounter| 
-			if player.has?(:hangover) && !player.has?(:ignore_brags)
-				player.clear_effect :hangover
-				Logger.log "%s has recovered from his hangover!" % player.name
+			if player.tokens(:hangover) > 0 && !player.has?(:ignore_brags)
+				player.gain_token(:hangover, -1)
+				# Logger.log "%s has recovered from his hangover!" % player.name
 			end
 		}
 	}
@@ -34,6 +34,6 @@ module GauntletOfFools
 	}
 
 	Brag.new('Blindfolded') {
-		hooks(:at_start) { |player| player.gain(:blindfolded) } # FIXME: fix interactions with extra_treasure hooks
+		hooks(:at_start) { |player| player.gain_token(:blindfolded) } # FIXME: fix interactions with extra_treasure hooks
 	}
 end

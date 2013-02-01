@@ -3,9 +3,9 @@ require '../lib/gof-sim'
 # Number of encounters that can hit x armor
 combats = GauntletOfFools::Encounter.all.select { |e| !e.non_combat? }
 t = combats.size
-8.upto(25) do |armor|
-	n = combats.select { |e| e.attack >= armor }.size
-	puts '%2i %s' % [armor, ?# * (n.to_f/t * 77)]
+6.upto(25) do |armor|
+	n = combats.count { |e| e.attack >= armor }
+	puts '%2i %2i %s' % [armor, n, ?# * (n.to_f/t * 74)]
 end
 
 

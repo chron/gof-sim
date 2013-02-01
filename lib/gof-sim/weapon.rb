@@ -9,7 +9,6 @@ module GauntletOfFools
 			super(name)
 		end
 
-		# FIXME: would like a better way to do this
 		def spend_weapon_token player, amount=1
 			player.spend_weapon_token(amount, name)
 		end
@@ -26,7 +25,7 @@ module GauntletOfFools
 			hooks(:after_attack) { |player,encounter| player.has?(:killed_this_round) && player.decide(:use_bow) && spend_weapon_token(player) && player.gain(:dodge_next) }
 		}
 
-		Weapon.new('Cleaver', 1, 0) { # PROMO CARD
+		Weapon.new('Cleaver', 1, 0) {
 			@dice_factor = 4
 		}
 
@@ -54,7 +53,7 @@ module GauntletOfFools
 			hooks(:before_rolling) { |player, encounter| player.decide(:use_holy_sword) && spend_weapon_token(player) && player.discard_all_penalty_tokens && player.gain(:ignore_boasts) }
 		}
 
-		Weapon.new('Mace', 5, 2) { # check tokens
+		Weapon.new('Mace', 5, 2) {
 			hooks(:after_rolling) { |player, encounter, rolls|
 				n = player.decide(:use_mace, rolls)
 				spend_weapon_token(player, n) && rolls + player.roll(n)

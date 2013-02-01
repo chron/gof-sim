@@ -1,14 +1,17 @@
 module GauntletOfFools
 	class BasicAI
 		PREFIXES = %w(decide_whether_to decide_how_many_times_to decide)
+
 		def initialize player
 			@player = player
 			@encounter = nil
+			@cache = {}
 		end
 
 		def decide decision, encounter, *args
 			PREFIXES.each do |p| 
 				if respond_to?(m = p + '_' + decision.to_s)
+					@cache.clear if @encounter != encounter # FIXME: not that nice
 					@encounter = encounter
 					return send(m, *args)
 				end
@@ -17,13 +20,22 @@ module GauntletOfFools
 			raise "#{decision}?"
 		end
 
-		def about_to_die? # FIXME: special damage, mushroom man etc
-			# FIXME: dodges/def raises from other weapons or hero abilities
-			(@encounter.attack >= @player.defense) && (@player.wounds + @encounter.damage) >= 4
+		def future_self
+			# FIXME: SPAMS THE LOG
+			return @cache[:future_self] if @cache[:future_self]
+			f = @player.clone
+			f.take_damage_from(@encounter)
+			f.run_hook(:end_of_turn)
+
+			@cache[:future_self] = f
+		end
+
+		def about_to_die # FIXME: doesn't run all hooks, eg treasure for mushroom man
+			future_self.dead?
 		end
 
 		def really_needs_a_kill
-			%w(Artificer Armorer).include?(@player.hero.name) && @player.hero_tokens > 0
+			%w(Artificer Armorer).include?(@player.hero.name) && @player.tokens(:hero_token) > 0
 		end
 
 		def kill_chance
@@ -40,12 +52,12 @@ module GauntletOfFools
 
 		def severe_damage
 			# FIXME: how to evaluate actual extra damage done 
-			@encounter.damage > 1 || @encounter.hooks?(:extra_damage) || (@player.has?(:take_double_damage) && @encounter.damage > 0)
+			@encounter.damage > 1 || (@encounter.damage > 0 && @encounter.hooks?(:extra_damage)) || (@player.has?(:take_double_damage) && @encounter.damage > 0)
 		end
 
 		def add_dice_up_to_max rolls, max
 			return 0 if @player.has?(:zero_attack)
-			return max if about_to_die?
+			return max if about_to_die
 
 			current_attack = @player.calculate_attack(rolls)
 
@@ -62,12 +74,17 @@ module GauntletOfFools
 			end
 		end
 
+		def decide_which_weapon_dice weapons
+			# FIXME: sometimes might not want to kill, e.g. cockroach
+			weapons.max_by { |w| w.dice }
+		end
+
 		def decide_which_encounter *encounters
 			encounters.first # FIXME
 		end
 
 		# This will only offer weapons with tokens available
-		def decide_which_weapon_token_to_use weapons
+		def decide_which_weapon_token_to_discard weapons
 			weapons[0]
 		end
 
@@ -77,9 +94,9 @@ module GauntletOfFools
 
 		def decide_how_many_times_to_use_one_use_die
 			return 0 if @player.has?(:zero_attack)
-			return @player.bonus(:one_use_die) if about_to_die?
+			return @player.tokens(:one_use_die) if about_to_die
 
-			0.upto(@player.bonus(:one_use_die)) do |v| 
+			0.upto(@player.tokens(:one_use_die)) do |v| 
 				return v if kill_chance_with_more_dice(v) >= 0.75
 			end
 
@@ -96,12 +113,21 @@ module GauntletOfFools
 		end
 
 		# Encounter decisions
+		def decide_whether_to_heal_from_healing_pool
+			@player.wounds > 0 && @player.tokens(:poison) == 0 && @player.tokens(:reduced_defense) < 3
+		end
+
+		def decide_whether_to_take_weapon_from_magic_pool
+			# FIXME
+			%w(Armsmaster Barbarian Ninja).include?(@player.hero.name)
+		end
+
 		def decide_whether_to_take_gold_from_bees
-			%w(Barbarian Armsmaster).include?(@player.hero.name)
+			about_to_die || %w(Barbarian Armsmaster).include?(@player.hero.name)
 		end
 
 		def decide_whether_to_take_wound_from_banshee
-			!about_to_die? || @player.defense <= 10
+			@player.wounds != 3 && @player.defense > 10
 		end
 
 		def decide_whether_to_skip_mercenary
@@ -109,27 +135,29 @@ module GauntletOfFools
 		end
 
 		def decide_whether_to_skip_behemoth
-			about_to_die? || (getting_hit && kill_chance < 0.5) # FIXME: certain combos probably value tokens more than this
+			about_to_die || (getting_hit && kill_chance < 0.5) # FIXME: certain combos probably value tokens more than this
 		end
 
 		# Hero decisions
 		def decide_whether_to_use_adventurer
-			about_to_die? || (!getting_hit && kill_chance > 0.75 && @encounter.hooks?(:extra_treasure)) # FIXME: cockroach
+			about_to_die || (!getting_hit && kill_chance > 0.75 && @encounter.hooks?(:extra_treasure) && @encounter.name != 'Giant Cockroach')
+		end
+
+		def decide_whether_to_use_alchemist
+			true
 		end
 
 		def decide_whether_to_use_armorer
-			true
+			!about_to_die && (@encounter.name == 'Giant Cockroach' || !@encounter.hooks?(:extra_treasure))
 		end
 
 		def decide_whether_to_use_artificer
-			true
+			!about_to_die && (@encounter.name == 'Giant Cockroach' || !@encounter.hooks?(:extra_treasure))
 		end
 
-		def decide_whether_to_use_avenger rolls
-			n = @player.opponents.count { |p| p.dead? }
-			return false if @player.calculate_attack(rolls) >= @encounter.defense
-
-			(@player.calculate_attack(rolls) + n) >= @encounter.defense # FIXME: interaction with attack_factors etc
+		def decide_whether_to_use_avenger rolls, dead_opponents
+			delta = @encounter.defense - @player.calculate_attack(rolls) # FIXME: interaction with attack_factors etc
+			delta > 0 && delta <= 3*dead_opponents 
 		end
 
 		def decide_whether_to_use_berserker # FIXME: multiuse?
@@ -137,11 +165,11 @@ module GauntletOfFools
 			new_kill_chance = kill_chance_with_more_dice(@player.wounds)
 			improvement = new_kill_chance - old_kill_chance
 
-			about_to_die? || (getting_hit && severe_damage && improvement > 0.1) || (getting_hit && improvement > 0.1 && new_kill_chance > 0.75)
+			about_to_die || (getting_hit && severe_damage && improvement > 0.1) || (getting_hit && improvement > 0.1 && new_kill_chance > 0.75)
 		end
 
 		def decide_whether_to_use_priest # assume you have at least one wound
-			about_to_die? || (kill_chance <= 0.4 || @encounter.treasure < 2) # FIXME: about to die doesn't account for overkill
+			about_to_die || (kill_chance <= 0.4 || @encounter.treasure < 2) # FIXME: about to die doesn't account for overkill
 		end
 
 		def decide_whether_to_use_knight
@@ -149,7 +177,7 @@ module GauntletOfFools
 		end
 
 		def decide_whether_to_use_thief
-			about_to_die? || (getting_hit && severe_damage)
+			about_to_die || (getting_hit && severe_damage)
 		end
 
 		def decide_whether_to_use_thief_for_trap
@@ -157,11 +185,11 @@ module GauntletOfFools
 		end
 
 		def decide_whether_to_use_trapper
-			about_to_die? || kill_chance > 0.8
+			about_to_die || kill_chance > 0.8
 		end
 
 		def decide_whether_to_use_warlord rolls
-			add_dice_up_to_max(rolls, @player.hero_tokens)
+			add_dice_up_to_max(rolls, @player.tokens(:hero_token))
 		end
 
 		def decide_whether_to_use_wizard # fixme: work with non_combat encounters
@@ -169,7 +197,7 @@ module GauntletOfFools
 		end
 
 		def decide_whether_to_use_zealot
-			about_to_die? || (getting_hit && !severe_damage && kill_chance < 0.5)
+			about_to_die || (getting_hit && !severe_damage && kill_chance < 0.5)
 		end
 
 		def decide_whether_to_use_zombie
@@ -177,13 +205,13 @@ module GauntletOfFools
 		end
 
 		def decide_how_many_times_to_use_monk # FIXME: purely defensive consideration atm
-			uses_required = ((@encounter.attack - @player.defense).to_f / 4).ceil
+			defensive_uses_required = ((@encounter.attack - @player.defense + 1).to_f / 4).ceil
 
-			return 0 if uses_required < 1
-			return 0 if uses_required > @player.hero_tokens
+			return 0 if defensive_uses_required < 1
+			return 0 if defensive_uses_required > @player.tokens(:hero_token)
 
-			if about_to_die? || severe_damage || uses_required == 1
-				uses_required
+			if about_to_die || severe_damage || defensive_uses_required == 1
+				defensive_uses_required
 			else
 				0
 			end
@@ -191,43 +219,42 @@ module GauntletOfFools
 
 		# Weapon decisions
 		def decide_whether_to_use_dagger
-			about_to_die? || kill_chance <= 0.5 || (really_needs_a_kill && kill_chance < 0.8)
+			about_to_die || kill_chance <= 0.5 || (really_needs_a_kill && kill_chance < 0.8)
 		end
 
 		def decide_whether_to_use_deadly_fists
-			(kill_chance < 0.9 && about_to_die?) || (kill_chance < 0.7 && getting_hit) || really_needs_a_kill || (getting_hit && severe_damage)
+			(kill_chance < 0.9 && about_to_die) || (kill_chance < 0.7 && getting_hit) || really_needs_a_kill || (getting_hit && severe_damage)
 		end
 
 		def decide_whether_to_use_bow
-			about_to_die? || (getting_hit && severe_damage)
+			about_to_die || (getting_hit && severe_damage)
 		end
 
 		def decide_whether_to_use_axe
 			return false if @player.has?(:zero_attack)
-			about_to_die? || kill_chance <= 0.6 || (really_needs_a_kill && kill_chance < 0.75)
+			about_to_die || kill_chance <= 0.6 || (really_needs_a_kill && kill_chance < 0.75)
 		end
 
 		def decide_whether_to_use_flaming_sword
-			about_to_die? || (@player.wounds < 2 && really_needs_a_kill) || (kill_chance < 0.4 && getting_hit && severe_damage)
+			about_to_die || (@player.wounds < 2 && really_needs_a_kill && kill_chance < 0.75) || (getting_hit && severe_damage)
 		end
 
 		def decide_whether_to_use_holy_sword
-			false # FIXME: implement this
+			@player.has?(:poison) # FIXME: implement this
 		end
 
 		def decide_whether_to_use_morning_star rolls
-			#return false if @player.has?(:zero_attack)
 			return false if @player.calculate_attack(rolls) >= @encounter.defense
 
 			# FIXME: hmm
 			d = rolls.size - @player.attack_dice
 			raise "what" if d < 0
 
-			kill_chance_with_more_dice(d) > 0.8
+			kill_chance_with_more_dice(d) > 0.5
 		end
 
 		def decide_whether_to_use_sling
-			about_to_die? || (getting_hit && kill_chance < 0.8) || (getting_hit && severe_damage)
+			about_to_die || (getting_hit && kill_chance < 0.8) || (getting_hit && severe_damage)
 		end
 
 		def decide_whether_to_use_spear rolls
@@ -248,12 +275,12 @@ module GauntletOfFools
 		end
 
 		def decide_how_many_times_to_use_sword
-			uses_required = ((@encounter.attack - @player.defense).to_f / 3).ceil
+			uses_required = ((@encounter.attack - @player.defense + 1).to_f / 3).ceil
 
 			return 0 if uses_required < 1
 			return 0 if uses_required > @player.weapon_tokens('Sword')
 
-			if about_to_die? || severe_damage
+			if about_to_die || severe_damage
 				uses_required
 			else
 				0
@@ -266,10 +293,10 @@ module GauntletOfFools
 
 		def decide_how_many_times_to_use_throwing_stars
 			return 0 if @player.has?(:zero_attack)
-			return @player.weapon_tokens('Throwing Stars') if about_to_die?
+			return @player.weapon_tokens('Throwing Stars') if about_to_die
 
 			0.upto(@player.weapon_tokens('Throwing Stars')) do |v| 
-				return v if kill_chance_with_more_dice(v) >= 0.75
+				return v if kill_chance_with_more_dice(v) >= 0.8
 			end
 
 			return 0
@@ -277,7 +304,7 @@ module GauntletOfFools
 
 		def decide_how_many_times_to_use_demonic_blade
 			return 0 if @player.has?(:zero_attack)
-			return @player.weapon_tokens('Demonic Blade') if about_to_die?
+			return @player.weapon_tokens('Demonic Blade') if about_to_die
 
 			0.upto(@player.weapon_tokens('Demonic Blade')) do |v| 
 				return v if kill_chance_with_more_dice(2*v) >= 0.75
@@ -285,7 +312,6 @@ module GauntletOfFools
 
 			return 0
 		end
-
 		
 		def decide_how_many_times_to_use_staff
 			defense_uses = ((@encounter.attack - @player.defense).to_f / 6).ceil

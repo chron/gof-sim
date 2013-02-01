@@ -14,7 +14,7 @@ module GauntletOfFools
 		end
 
 		def display_name
-			name + (self.attack > 0 ? " (#{attack}/#{defense})" : '')
+			name + (self.attack > 0 ? " (#{attack}/#{defense}/#{damage}#{hooks?(:extra_damage)? ?+ : ''}/#{treasure}#{hooks?(:extra_treasure)? ?+ : ''})" : '')
 		end
 
 		def add_prefix prefix # FIXME: this is kind of dumb
@@ -30,11 +30,11 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Bee Swarm', 10, 6, 1, 0) {
-			hooks(:extra_treasure) { |player, encounter| player.decide(:take_gold_from_bees) ? player.gain_treasure(2) : player.gain_hero_token }
+			hooks(:extra_treasure) { |player, encounter| player.decide(:take_gold_from_bees) ? player.gain_treasure(2) : player.gain_token(:hero_token) }
 		}
 
 		Encounter.new('Banshee', 23, 16, 0, 4) {
-			hooks(:extra_damage) { |player, encounter| player.decide(:take_wound_from_banshee) ? player.wound(1) : player.gain_bonus(:defense, -3) }
+			hooks(:extra_damage) { |player, encounter| player.decide(:take_wound_from_banshee) ? player.wound(1) : player.gain_token(:reduced_defense, 3) }
 		}
 
 		Encounter.new('Behemoth', 20, 21, 1, 4) {
@@ -52,13 +52,13 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Cache') {
-			hooks(:instead_of_combat) { |player| player.gain_treasure 2 }
+			hooks(:instead_of_combat) { |player| player.gain_treasure(2) }
 		}
 
 		Encounter.new('Carnivorous Plant', 10, 16, 1, 1)
 
 		Encounter.new('Dancing Sword', 21, 8, 1, 3) {
-			hooks(:extra_treasure) { |player| player.gain_bonus(:attack, 1) }
+			hooks(:extra_treasure) { |player| player.gain_token(:attack, 1) }
 		}
 
 		Encounter.new('Demon', 17, 17, 1, 4) {
@@ -99,11 +99,11 @@ module GauntletOfFools
 		Encounter.new('Giant', 24, 20, 1, 5)
 
 		Encounter.new('Giant Cockroach', 11, 12, 1, 2) {
-			hooks(:extra_treasure) { |player| player.gain_bonus(:armor, -1) }
+			hooks(:extra_treasure) { |player| player.gain_token(:reduced_defense, 1) }
 		}
 
 		Encounter.new('Giant Crab', 8, 18, 1, 2) {
-			hooks(:extra_treasure) { |player| player.gain_bonus(:armor) }
+			hooks(:extra_treasure) { |player| player.gain_token(:defense, 1) }
 		}
 
 		Encounter.new('Giant Scorpion', 19, 12, 2, 3) {
@@ -111,11 +111,11 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Giant Spider', 17, 19, 0, 3) {
-			hooks(:extra_damage) { |player| player.gain(:poison, :recently_poisoned) }
+			hooks(:extra_damage) { |player| player.gain_token(:poison) && player.gain(:recently_poisoned) }
 		}
 
 		Encounter.new('Giant Toad', 14, 12, 1, 2) {
-			hooks(:extra_treasure) { |player| player.gain_bonus(:one_use_die) }
+			hooks(:extra_treasure) { |player| player.gain_token(:one_use_die, 1) }
 		}
 
 		Encounter.new('Giant Turtle', 9, 14, 1, 1)
@@ -141,7 +141,7 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Healing Pool') {
-			hooks(:instead_of_combat) { |player| player.heal(1) } # penalties?
+			hooks(:instead_of_combat) { |player| player.decide(:heal_from_healing_pool) ? player.heal(1) : player.discard_all_penalty_tokens }
 		}
 
 		Encounter.new('Hellhound', 16, 10, 1, 3) {
@@ -149,7 +149,7 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Magic Pool') {
-			hooks(:instead_of_combat) { |player| player.gain_weapon_token; player.gain_hero_token } # should be a choice
+			hooks(:instead_of_combat) { |player| player.decide(:take_weapon_from_magic_pool) ? player.gain_weapon_token : player.gain_token(:hero_token) }
 		}
 
 		Encounter.new('Mercenary', 18, 20, 2, 4) {
@@ -165,7 +165,10 @@ module GauntletOfFools
 		Encounter.new('Minotaur', 20, 14, 1, 4)
 
 		Encounter.new('Mummy', 18, 14, 0, 3) {
-			hooks(:extra_damage) { |player| player.next_turn(:take_double_damage) }
+			hooks(:extra_damage) { |player| 
+				Logger.log '%s is afflicted with the Mummy\'s curse!' % [player.name]
+				player.next_turn(:take_double_damage) 
+			}
 		}
 
 		Encounter.new('Mushroom Man', 15, 14, 2, 2) {
@@ -197,7 +200,7 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Slime Monster', 22, 18, 1, 4) {
-			hooks(:extra_damage) { |player| player.gain_bonus(:dice, -1) }
+			hooks(:extra_damage) { |player| player.gain_token(:reduced_dice, 1) }
 		}
 
 		Encounter.new('Spear Trap') { # TODO: check this in relation to damage factors, eg mummy?
@@ -211,7 +214,7 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Unicorn', 12, 8, 1, 0) {
-			hooks(:extra_treasure) { |player| player.gain_bonus(:one_use_die) }
+			hooks(:extra_treasure) { |player| player.gain_token(:one_use_die, 1) }
 		}
 
 		Encounter.new('Vampire', 21, 18, 0, 4) {
@@ -219,11 +222,11 @@ module GauntletOfFools
 		}
 
 		Encounter.new('Will-o-wisp', 19, 15, 0, 2) { # check damage
-			hooks(:extra_damage) { |player| player.gain_hero_token(-1) }
+			hooks(:extra_damage) { |player| player.gain_token(:hero_token, -1) }
 		}
 
 		Encounter.new('Witch', 15, 10, 1, 2) {
-			hooks(:extra_damage) { |player| player.gain_bonus(:defense, -3) }
+			hooks(:extra_damage) { |player| player.gain_token(:reduced_defense, 3) }
 		}
 
 		Encounter.new('Wolf', 12, 11, 1, 1)
