@@ -1,23 +1,22 @@
 module GauntletOfFools
-	ONE_USE_DIE = GameObject.new('One-time Die') { 
-		hooks(:before_rolling) { |player, encounter| 
-			n = player.decide(:use_one_use_die)
-			player.spend_token(:one_use_die, n) && player.gain_temp(:dice, n) 
+	TOKEN_LOGIC = {
+		:one_use_die => GameObject.new('One-time Die') { 
+			hooks(:before_rolling) { |player, encounter| 
+				n = player.decide(:use_one_use_die)
+				player.spend_token(:one_use_die, n) && player.gain_temp(:dice, n) 
+			}
+		},
+
+		:poison => GameObject.new('Poison') {
+			hooks(:end_of_turn) { |player|
+				# FIXME: possible to have multiple poisons, eg via adventurer?
+				if player.tokens(:poison) > 0 && !player.has?(:recently_poisoned)
+					player.log 'Poison courses through %s\'s veins.' % [player.name]
+					player.wound(1)
+				end
+			}
 		}
 	}
-
-	POISON = GameObject.new('Poison') {
-		hooks(:end_of_turn) { |player|
-			# FIXME: possible to have multiple poisons, eg via adventurer?
-			if player.tokens(:poison) > 0 && !player.has?(:recently_poisoned)
-				Logger.log 'Poison courses through %s\'s veins.' % [player.name]
-				player.wound(1)
-			end
-		}
-	}
-
-	# FIXME: refactor this
-	PLURAL = Hash.new { |h,k| h[k] = k.to_s.downcase+'s'}.merge({ 'die' => 'dice', 'dice' => 'dice', 'attack' => 'attack', 'one_use_die' => 'one use dice'})
 
 	class Option < Struct.new(:hero, :weapons, :current_owner, :brags, :parent_opt)
 		def inspect
@@ -42,9 +41,11 @@ module GauntletOfFools
 	end
 
 	class Player
-		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :weapon_tokens, :wounds, :treasure
-		attr_accessor :current_encounter, :delegates, :opponents
+		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :weapon_tokens, :delegates
+		attr_accessor :current_encounter, :opponents, :game
+		# TODO: generalize this somehow
 
+		PENALTY_TOKENS = %w(reduced_defense reduced_attack reduced_dice poison)
 		DISTRIBUTION = Hash.new do |h,dice|
 			h[dice] = if dice <= 0
 				{0 => 1}
@@ -74,7 +75,7 @@ module GauntletOfFools
 
 			@ai = BasicAI.new(self)
 
-			@wounds, @treasure, @age = 0, 0, 0
+			@age = 0
 			@fight_queue = []
 
 			@current_effects, @next_turn_effects = [], []
@@ -86,19 +87,25 @@ module GauntletOfFools
 
 		def clone
 			obj = super
+			depth = @name[/\(D:(\d+)\)$/, 1] || 0
 
 			obj.instance_eval do
-				@name = "Future #{@name}"
+				@name = "Future #{@name} (D:#{depth.to_i+1})"
 				@fight_queue = @fight_queue.dup
 				@current_effects = @current_effects.dup
 				@next_turn_effects = @next_turn_effects.dup
 				@tokens = @tokens.dup
 				@temp_tokens = @temp_tokens.dup
 				@weapon_tokens = @weapon_tokens.dup
+				@game = nil
 				@ai = BasicAI.new(self)
 			end
 
 			obj
+		end
+
+		def log message
+			@game.log(message) if @game
 		end
 
 		def self.from_names name, hero, weapons, brags=[]
@@ -109,11 +116,9 @@ module GauntletOfFools
 		end
 
 		def run_hook hook, *data
-			# FIXME: find a better place for this stuff
-			t = @tokens[:one_use_die] > 0 ? ONE_USE_DIE : nil
-			z = @tokens[:poison] > 0 ? POISON : nil
-
-			r = [z, @hero, @current_encounter, @delegates, @weapons, @brags, t].flatten.inject(data) do |d,obj| 
+			# FIXME: encounter before weapons etc makes Gladiator AI difficult
+			# FIXME: one-use die before weapons with insta kill powers?
+			r = [@delegates, @hero, @current_encounter, @weapons, @brags].flatten.inject(data) do |d,obj| 
 				iv = obj && obj.call_hook(hook, self, current_encounter, *d)
 				iv ? [iv] : d
 			end
@@ -129,6 +134,8 @@ module GauntletOfFools
 			s
 		end
 
+		# queueing nil will result in a brand new encounter draw.
+		# CHECK: should this new encounter (sometimes?) be without modifiers?
 		def queue_fight encounter=nil
 			@fight_queue << encounter
 		end
@@ -144,14 +151,15 @@ module GauntletOfFools
 		end
 
 		def next_turn effect
-			#Logger.log '%s will gain an effect next turn: %s' % [@name, effect]
+			#log '%s will gain an effect next turn: %s' % [@name, effect]
 			@next_turn_effects << effect
 		end
 
 		def begin_turn
 			@age += 1
 			# FIXME: doesn't announce gains, is this ok?
-			@current_effects = @next_turn_effects
+			@current_effects.clear
+			@current_effects.concat @next_turn_effects
 			@next_turn_effects.clear
 			@temp_tokens.clear
 		end
@@ -161,7 +169,7 @@ module GauntletOfFools
 		end
 
 		def gain *effects
-			#effects.each { |e| Logger.log '%s gains an effect: %s' % [@name, e] }
+			#effects.each { |e| log '%s gains an effect: %s' % [@name, e] }
 			@current_effects.concat(effects)
 		end
 
@@ -174,9 +182,8 @@ module GauntletOfFools
 		end
 
 		def discard_all_penalty_tokens # TODO: check interactions with getting a -1 penalty when you already have a +1 bonus
-			Logger.log '%s discards all penalty tokens.' % [@name]
-			# TODO: generalize this somehow
-			%w(reduced_defense reduced_attack reduced_dice poison).each { |k| @tokens.delete(k) }
+			log '%s discards all penalty tokens.' % [@name]
+			PENALTY_TOKENS.each { |k| @tokens.delete(k) }
 		end
 
 		def gain_weapon_token n=1, weapon=nil
@@ -205,8 +212,7 @@ module GauntletOfFools
 
 			if n != 0
 				@weapon_tokens[i] += n
-				token_name = 'weapon token' + (@weapons.size > 1 ? " (for #{@weapons[i]})" : '')
-				log_gain_message(token_name, n, " (#{@weapon_tokens*?/} remaining).")
+				log_gain_message('weapon token', n, "#{@weapons.size > 1 ? " (for #{@weapons[i]})" : ''} (#{@weapon_tokens[i]} remaining).")
 			end
 
 			true
@@ -226,8 +232,7 @@ module GauntletOfFools
 
 			if @weapon_tokens[i] >= n
 				@weapon_tokens[i] -= n
-				token_name = 'weapon token' + (@weapons.size > 1 ? " (for #{@weapons[i]})" : '')
-				log_gain_message(token_name, n, " (#{@weapon_tokens*?/} remaining).", 'spends', '')
+				log_gain_message('weapon token', n, "#{@weapons.size > 1 ? " (for #{@weapons[i]})" : ''} (#{@weapon_tokens[i]} remaining).", 'spends', '')
 				true
 			end
 		end
@@ -238,6 +243,21 @@ module GauntletOfFools
 
 		def spend_hero_token n=1
 			spend_token(:hero_token, n)
+		end
+
+		def gain_token token_type, amount=1, pos_verb='gains', neg_verb='loses' # FIXME: DRY this
+			# FIXME: so ugly
+			if l=TOKEN_LOGIC[token_type]
+				if amount + @tokens[token_type] > 0
+					@delegates << l if !@delegates.include?(l)
+				else
+					@delegates.delete(l)
+				end
+			end
+
+			amount = -@tokens[token_type] if (amount + @tokens[token_type]) < 0
+			log_gain_message(token_type.to_s.tr('_', ' '), amount, '.', pos_verb, neg_verb)
+			@tokens[token_type] += amount
 		end
 
 		def spend_token token_type, n=1
@@ -252,15 +272,19 @@ module GauntletOfFools
 		end
 
 		def gain_treasure amount
-			amount = -treasure if amount + treasure < 0
-			log_gain_message('coin', amount)
-			@treasure += amount
+			gain_token(:treasure, amount)
+		end
+
+		def wounds
+			tokens(:wound)
+		end
+
+		def treasure
+			tokens(:treasure)
 		end
 
 		def wound amount
-			amount = -wounds if amount + wounds < 0
-			log_gain_message('wound', amount, '.', 'receives', 'is cured of')
-			@wounds += amount
+			gain_token(:wound, amount, 'receives', 'is cured of')
 		end
 
 		def heal amount
@@ -268,13 +292,7 @@ module GauntletOfFools
 		end
 
 		def dead?
-			@wounds >= 4 && !has?(:cannot_die)
-		end
-
-		def gain_token token_type, amount=1
-			amount = -@tokens[token_type] if (amount + @tokens[token_type]) < 0
-			log_gain_message(token_type.to_s.tr('_', ' '), amount)
-			@tokens[token_type] += amount
+			tokens(:wound) >= 4 && !has?(:cannot_die)
 		end
 
 		def gain_temp token_type, amount # FIXME: TURN VERSUS ROUND
@@ -282,9 +300,9 @@ module GauntletOfFools
 			@temp_tokens[token_type] += amount
 		end
 
-		def log_gain_message object, amount, suffix='.', pos_verb='gains', neg_verb='loses' # FIXME: loses vs spends for non weapon tokens
+		def log_gain_message object, amount, suffix='.', pos_verb='gains', neg_verb='loses'
 			if amount != 0
-				Logger.log '%s %s %i %s%s' % [name, amount > 0 ? pos_verb : neg_verb, amount.abs, amount.abs == 1 ? object : PLURAL[object], suffix]
+				log '%s %s %i %s%s' % [name, amount > 0 ? pos_verb : neg_verb, amount.abs, amount.abs == 1 ? object : object.to_s.pluralize, suffix]
 			end
 		end
 
@@ -328,7 +346,7 @@ module GauntletOfFools
 		def roll number
 			return [] if number <= 0
 			r = Array.new(number) { rand(6)+1 }
-			Logger.log '%s rolls %i dice, resulting in => %p => %i' % [@name, number, r, r.sum]
+			log '%s rolls %i dice, resulting in => %p => %i' % [@name, number, r, r.sum]
 			r
 		end
 
@@ -338,10 +356,12 @@ module GauntletOfFools
 
 		def take_damage_from encounter
 			if hero.call_hook(:instead_of_damage, self, encounter)
-				Logger.log "%s uses a power instead of taking damage." % [@name]
+				log "%s uses a power instead of taking damage." % [@name]
 			else
 				damage_multiplier = 2 ** number_of(:take_double_damage)
 				wound(encounter.damage * damage_multiplier) if encounter.damage > 0
+
+				raise [encounter, self, damage_multiplier].to_s if damage_multiplier > 8
 
 				damage_multiplier.times { run_hook(:extra_damage) }
 			end
@@ -350,10 +370,10 @@ module GauntletOfFools
 		def receive_treasure_from encounter
 			# FIXME: messages appear after their effects, difficult to fix
 			if hero.call_hook(:instead_of_treasure, self) # FIXME: only hero?
-				Logger.log("%s uses a power instead of gaining treasure." % [@name]) # FIXME
+				log("%s uses a power instead of gaining treasure." % [@name]) # FIXME
 			else
 				loot = encounter.treasure
-				loot -= 1 if has?(:blindfolded) && !has?(:ignore_brags) && !encounter_hits
+				loot -= 1 if has?(:blindfolded) && !has?(:ignore_brags) && has?(:dodged_this_round)
 
 				gain_treasure(loot) if loot > 0
 				run_hook(:extra_treasure)

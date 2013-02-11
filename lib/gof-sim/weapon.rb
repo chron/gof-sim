@@ -126,9 +126,11 @@ module GauntletOfFools
 			}
 		}
 
-		# Weapon.new('Wand', 5, 2)
+		#Weapon.new('Wand', 5, 2) {
 			# at the start of each turn, you may look at and reorder the top two cards in the encounter deck
 			# pay 1 token -> discard one
+		#	hooks(:start_of_turn) { |player, game| player.decide(:reorder_encounter_deck, *game.peek_at_deck(2))}
+		#}
 
 		Weapon.new('Whip', 4, 2) {
 			hooks(:after_attack) { |player,encounter| !player.has?(:killed_this_round) && spend_weapon_token(player) && player.gain(:dodge_next) }

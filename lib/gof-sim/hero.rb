@@ -44,13 +44,13 @@ module GauntletOfFools
 			hooks(:after_attack) { |player, encounter| player.has?(:berserk) && player.has?(:killed_this_round) && player.gain(:dodge_next) }
 		}
 
-		#Hero.new('Jester', 14, 2)  {
-			#hooks(:before_rolling) { |player, encounter|}
-			# token -> before rolling, switch monster's attack and defense
-		#}
+		Hero.new('Jester', 14, 2)  { # FIXME: would be nice to do this without mutating the encounter itself
+			hooks(:before_rolling) { |player, encounter| @swapped = player.decide(:use_jester) && player.spend_hero_token && encounter.swap_attack_and_defense }
+			hooks(:after_encounter) { |player, encounter| encounter.swap_attack_and_defense if @swapped } # swap back after jester's turn
+		}
 
 		Hero.new('Knight', 16, 2) {
-			hooks(:instead_of_damage) { |player, encounter| player.decide(:use_knight) && player.spend_hero_token && player.wound(1) } # case of zero wounds?
+			hooks(:instead_of_damage) { |player, encounter| player.decide(:use_knight) && player.spend_hero_token && player.wound(1) } # CHECK: case of zero wounds?
 		}
 
 		Hero.new('Monk', 10, 4) { # FIXME: before_damage??? what hook is this supposed to be
@@ -60,9 +60,10 @@ module GauntletOfFools
 			}
 		}
 
-		# FIXME: does this include passives?
-		Hero.new('Necromancer', 16, 2) { # FIXME: might clobber other uses of delegates in future # FIXME: check interaction with zombie + prospector
-			hooks(:before_encounter) { |player, encounter| player.delegates = player.opponents.select { |p| p.dead? }.map { |p| p.hero }} # FIXME: zombies using their power? zombies that have become alive again?
+		# CHECK: does this include passives?
+		Hero.new('Necromancer', 16, 2) { # FIXME: check interaction with zombie + prospector
+			# CHECK: zombies using their power? zombies that have become alive again?
+			hooks(:end_of_turn) { |player| player.opponents.each { |p| p.dead? && !player.delegates.include?(p.hero) && p.delegates << p.hero }} # has to have died on previous turns
 		}
 
 		Hero.new('Ninja', 17, 0) {
@@ -83,8 +84,8 @@ module GauntletOfFools
 		}
 
 		Hero.new('Trapper', 16, 2) {
-			hooks(:before_rolling) { |player, encounter| player.decide(:use_trapper) && player.spend_hero_token && player.gain(:trapper_bounty) } # use once per fight but lasts whole turn
-			hooks(:extra_treasure) { |player, encounter| player.has?(:trapper_bounty) && player.gain_treasure(2) }
+			hooks(:before_rolling) { |player, encounter| !player.has?(:trapper_bounty) && player.decide(:use_trapper) && player.spend_hero_token && player.gain(:trapper_bounty) }
+			hooks(:extra_treasure) { |player, encounter| player.has?(:trapper_bounty) && player.gain_treasure(2) } # FIXME: once per fight, lasts whole turn: multiples?
 		}
 
 		Hero.new('Warlord', 12, 2) {
@@ -104,7 +105,7 @@ module GauntletOfFools
 		}
 
 		Hero.new('Zombie', 13, 2) { # FIXME: getting hit by a giant scorpion should NOT let you play next turn for free
-			hooks(:encounter_while_dead) { |player, encounter| player.decide(:use_zombie) && player.spend_hero_token && player.gain(:cannot_die) }
+			hooks(:start_of_turn) { |player, encounter| player.decide(:use_zombie) && player.spend_hero_token && player.gain(:cannot_die) }
 		}
 	end
 end

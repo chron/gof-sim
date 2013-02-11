@@ -18,43 +18,42 @@ class Array
 	end
 end
 
-module GauntletOfFools
-	class Logger
-		@logging = true
+class String
+	PLURALS = Hash.new { |h,k| h[k] = k+'s' }.merge('defense' => 'defense', 'die' => 'dice', 'dice' => 'dice', 'attack' => 'attack')
 
-		def self.logging= v
-			@logging = v
-		end
-
-		def self.log str
-			return unless @logging
-
-			@file ||= File.open('log.txt', ?w)
-			@file.puts str
-
-			true
-		end
+	def pluralize
+		self.gsub(/^(.* )(.+)$/) { $1 + PLURALS[$2] }
 	end
+end
 
+module GauntletOfFools
 	class GameObject
 		attr_accessor :name
-		attr_reader :instant
 
 		def initialize name, &b
 			@name = name
-			@hooks = {} # FIXME: multiple hooks on the same GameObject/hook_name?
+			@hooks = Hash.new { |h,k| h[k] = [] }
 
 			instance_eval(&b) if b
 
 			self.class.register(self)
 		end
 
-		def to_s
-			@name
+		def clone
+			new_obj = super
+
+			new_obj.instance_eval { @hooks = Hash.new { |h,k| h[k] = [] }}
+			self.all_hooks.each { |hook,ary| new_obj.all_hooks[hook] = ary.dup }
+
+			new_obj
 		end
 
-		def key
-			@name.downcase.tr(' ','_').intern
+		def all_hooks
+			@hooks #.each { |h,a| a.each { |v| yield h,v }}
+		end
+
+		def to_s
+			@name
 		end
 
 		def <=> other
@@ -62,16 +61,16 @@ module GauntletOfFools
 		end
 
 		def hooks hook_name, &b
-			@hooks[hook_name] = b
+			@hooks[hook_name] << b
 		end
 
 		def call_hook hook_name, *args
-			h = @hooks[hook_name] 
-			h[*args] if h
+			# TODO: This should use the same return-chain semantics as Player#run_hooks
+			!@hooks[hook_name].empty? && @hooks[hook_name].map { |h| h[*args] }.last
 		end
 
 		def hooks? hook_name
-			@hooks.include?(hook_name)
+			!@hooks[hook_name].empty?
 		end
 
 		def self.register item

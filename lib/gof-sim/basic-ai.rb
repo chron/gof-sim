@@ -5,14 +5,13 @@ module GauntletOfFools
 		def initialize player
 			@player = player
 			@encounter = nil
-			@cache = {}
 		end
 
 		def decide decision, encounter, *args
 			PREFIXES.each do |p| 
 				if respond_to?(m = p + '_' + decision.to_s)
-					@cache.clear if @encounter != encounter # FIXME: not that nice
 					@encounter = encounter
+
 					return send(m, *args)
 				end
 			end
@@ -21,14 +20,60 @@ module GauntletOfFools
 		end
 
 		def future_self
-			# FIXME: SPAMS THE LOG
-			return @cache[:future_self] if @cache[:future_self]
 			f = @player.clone
-			f.take_damage_from(@encounter)
+			f.take_damage_from(@encounter) if getting_hit
+			#f.receive_treasure_from(@encounter)
 			f.run_hook(:end_of_turn)
 
-			@cache[:future_self] = f
+			f
 		end
+
+		# FIXME: these vary a lot, especially hero/weapon tokens
+		WEIGHTS = {
+			:treasure => 1,
+			:wound => -5,
+			:poison => -10,
+			:hero_token => 3,
+			:weapon_token => 3,
+			:attack => 1,
+			:defense => 2,
+			:dice => 5,
+			:one_use_die => 2,
+			:reduced_defense => -2,
+			:reduced_dice => -5,
+			:reduced_attack => -1
+		}
+
+		def self.evaluate_state player
+			WEIGHTS.inject(0) do |sum,(token,weight)|
+				amount = token == :weapon_token ? player.weapon_tokens : player.tokens(token)
+				sum + amount * weight
+			end
+		end
+
+		def value_of_encounter encounter
+			p1 = @player.clone
+			p1.take_damage_from(encounter) if getting_hit(encounter)
+			
+			p2 = p1.clone
+			p2.receive_treasure_from(encounter)
+			p1.run_hook(:end_of_turn) # after_encounter
+			p2.run_hook(:end_of_turn)
+
+			current_value = BasicAI.evaluate_state(@player)
+			value_of_miss = BasicAI.evaluate_state(p1)
+			value_of_hit = BasicAI.evaluate_state(p2)
+
+			(value_of_hit - current_value) * kill_chance(encounter) + (value_of_miss - current_value) * (1 - kill_chance(encounter))
+		end
+
+		#def expected_wounds_per_encounter
+		#	Encounter.all.map { |e| @player.defense <= e.attack ? e.damage : 0 }.mean
+		#end
+
+		#def expected_gold_per_encounter
+		#	Encounter.all.map { |e| @player.chance_to_hit(e.defense) * e.treasure }.mean
+		#end
 
 		def about_to_die # FIXME: doesn't run all hooks, eg treasure for mushroom man
 			future_self.dead?
@@ -38,16 +83,16 @@ module GauntletOfFools
 			%w(Artificer Armorer).include?(@player.hero.name) && @player.tokens(:hero_token) > 0
 		end
 
-		def kill_chance
-			@player.chance_to_hit(@encounter.defense)
+		def kill_chance e=@encounter
+			@player.chance_to_hit(e.defense)
 		end
 
 		def kill_chance_with_more_dice n
 			@player.chance_to_hit(@encounter.defense, n)
 		end
 
-		def getting_hit
-			@encounter.attack >= @player.defense && !@player.has?(:dodge_next)
+		def getting_hit e=@encounter
+			e.attack >= @player.defense && !@player.has?(:dodge_next)
 		end
 
 		def severe_damage
@@ -80,7 +125,11 @@ module GauntletOfFools
 		end
 
 		def decide_which_encounter *encounters
-			encounters.first # FIXME
+			encounters.max_by { |e| value_of_encounter(e) }
+		end
+
+		def decide_reorder_encounter_deck *encounters
+			encounters
 		end
 
 		# This will only offer weapons with tokens available
@@ -113,6 +162,10 @@ module GauntletOfFools
 		end
 
 		# Encounter decisions
+		def decide_whether_to_bet_on_gladiator
+			kill_chance > 0.6 ? [5, @player.treasure].min : 0
+		end
+
 		def decide_whether_to_heal_from_healing_pool
 			@player.wounds > 0 && @player.tokens(:poison) == 0 && @player.tokens(:reduced_defense) < 3
 		end
@@ -140,7 +193,7 @@ module GauntletOfFools
 
 		# Hero decisions
 		def decide_whether_to_use_adventurer
-			about_to_die || (!getting_hit && kill_chance > 0.75 && @encounter.hooks?(:extra_treasure) && @encounter.name != 'Giant Cockroach')
+			@player.dead? || (!getting_hit && kill_chance > 0.75 && @encounter.hooks?(:extra_treasure) && @encounter.name != 'Giant Cockroach')
 		end
 
 		def decide_whether_to_use_alchemist
@@ -170,6 +223,11 @@ module GauntletOfFools
 
 		def decide_whether_to_use_priest # assume you have at least one wound
 			about_to_die || (kill_chance <= 0.4 || @encounter.treasure < 2) # FIXME: about to die doesn't account for overkill
+		end
+
+		def decide_whether_to_use_jester
+			# FIXME: purely defensive consideration
+			getting_hit && @encounter.defense < @player.defense
 		end
 
 		def decide_whether_to_use_knight
@@ -236,6 +294,7 @@ module GauntletOfFools
 		end
 
 		def decide_whether_to_use_flaming_sword
+			# FIXME: don't use if about to take lethal from scorpion
 			about_to_die || (@player.wounds < 2 && really_needs_a_kill && kill_chance < 0.75) || (getting_hit && severe_damage)
 		end
 
