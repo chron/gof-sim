@@ -3,13 +3,13 @@ module GauntletOfFools
 		:one_use_die => GameObject.new('One-time Die') { 
 			hooks(:before_rolling) { |player, encounter| 
 				n = player.decide(:use_one_use_die)
-				player.spend_token(:one_use_die, n) && player.gain_temp(:dice, n) 
+				player.spend_token(:one_use_die, n) && player.gain_token(:temp_dice, n) 
 			}
 		},
 
 		:poison => GameObject.new('Poison') {
 			hooks(:end_of_turn) { |player|
-				# FIXME: possible to have multiple poisons, eg via adventurer?
+				# FIXME: possible to have multiple poisons, eg via adventurer/extra_bitey?
 				if player.tokens(:poison) > 0 && !player.has?(:recently_poisoned)
 					player.log 'Poison courses through %s\'s veins.' % [player.name]
 					player.wound(1)
@@ -41,11 +41,12 @@ module GauntletOfFools
 	end
 
 	class Player
-		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :weapon_tokens, :delegates
+		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :delegates
 		attr_accessor :current_encounter, :opponents, :game
-		# TODO: generalize this somehow
 
 		PENALTY_TOKENS = %w(reduced_defense reduced_attack reduced_dice poison)
+		TEMP_TOKENS = %w(temp_defense temp_dice)
+
 		DISTRIBUTION = Hash.new do |h,dice|
 			h[dice] = if dice <= 0
 				{0 => 1}
@@ -79,7 +80,7 @@ module GauntletOfFools
 			@fight_queue = []
 
 			@current_effects, @next_turn_effects = [], []
-			@tokens, @temp_tokens = Hash.new(0), Hash.new(0)
+			@tokens = Hash.new(0)
 
 			@tokens[:hero_token] = hero.tokens
 			@weapon_tokens = @weapons.map(&:tokens)
@@ -95,10 +96,9 @@ module GauntletOfFools
 				@current_effects = @current_effects.dup
 				@next_turn_effects = @next_turn_effects.dup
 				@tokens = @tokens.dup
-				@temp_tokens = @temp_tokens.dup
 				@weapon_tokens = @weapon_tokens.dup
 				@game = nil
-				@ai = BasicAI.new(self)
+				@ai = BasicAI.new(self) # FIXME: current_encounter won't be set?
 			end
 
 			obj
@@ -117,7 +117,7 @@ module GauntletOfFools
 
 		def run_hook hook, *data
 			# FIXME: encounter before weapons etc makes Gladiator AI difficult
-			# FIXME: one-use die before weapons with insta kill powers?
+			# FIXME: one-use die before weapons with insta kill powers or encounter skips?
 			r = [@delegates, @hero, @current_encounter, @weapons, @brags].flatten.inject(data) do |d,obj| 
 				iv = obj && obj.call_hook(hook, self, current_encounter, *d)
 				iv ? [iv] : d
@@ -157,11 +157,10 @@ module GauntletOfFools
 
 		def begin_turn
 			@age += 1
-			# FIXME: doesn't announce gains, is this ok?
 			@current_effects.clear
-			@current_effects.concat @next_turn_effects
+			@current_effects.concat(@next_turn_effects)
 			@next_turn_effects.clear
-			@temp_tokens.clear
+			TEMP_TOKENS.each { |t| @tokens.delete(t.intern) }
 		end
 
 		def number_of effect
@@ -183,7 +182,7 @@ module GauntletOfFools
 
 		def discard_all_penalty_tokens # TODO: check interactions with getting a -1 penalty when you already have a +1 bonus
 			log '%s discards all penalty tokens.' % [@name]
-			PENALTY_TOKENS.each { |k| @tokens.delete(k) }
+			PENALTY_TOKENS.each { |k| @tokens.delete(k.intern) }
 		end
 
 		def gain_weapon_token n=1, weapon=nil
@@ -295,11 +294,6 @@ module GauntletOfFools
 			tokens(:wound) >= 4 && !has?(:cannot_die)
 		end
 
-		def gain_temp token_type, amount # FIXME: TURN VERSUS ROUND
-			log_gain_message(token_type, amount, ' for the rest of the turn.')
-			@temp_tokens[token_type] += amount
-		end
-
 		def log_gain_message object, amount, suffix='.', pos_verb='gains', neg_verb='loses'
 			if amount != 0
 				log '%s %s %i %s%s' % [name, amount > 0 ? pos_verb : neg_verb, amount.abs, amount.abs == 1 ? object : object.to_s.pluralize, suffix]
@@ -310,26 +304,22 @@ module GauntletOfFools
 			@tokens[token_type]
 		end
 
-		def temp token_type
-			@temp_tokens[token_type]
-		end
-
 		def defense
 			return 0 if has?(:zero_defense)
-			subtotal = @hero.defense + tokens(:defense) - tokens(:reduced_defense) + temp(:defense)
+			subtotal = @hero.defense + tokens(:defense) + tokens(:temp_defense) - tokens(:reduced_defense)
 			run_hook(:defense, subtotal)
 		end
 
 		def attack_dice
 			return 0 if has?(:zero_attack)
 			w = @weapons.size == 1 ? @weapons.first : decide(:which_weapon_dice, @weapons)
-			subtotal = w.dice + tokens(:dice) - tokens(:reduced_dice) + temp(:dice)
+			subtotal = w.dice + tokens(:dice) + tokens(:temp_dice) - tokens(:reduced_dice)
 			run_hook(:attack_dice, subtotal)
 		end
 
 		def bonus_attack
 			return 0 if has?(:zero_attack)
-			subtotal = @weapons.inject(tokens(:attack) - tokens(:reduced_attack)) { |s,w| s + (w.call_hook(:bonus_attack, self) || 0) }
+			subtotal = tokens(:attack) + tokens(:temp_attack) - tokens(:reduced_attack)
 			run_hook(:bonus_attack, subtotal)
 		end
 
@@ -361,7 +351,7 @@ module GauntletOfFools
 				damage_multiplier = 2 ** number_of(:take_double_damage)
 				wound(encounter.damage * damage_multiplier) if encounter.damage > 0
 
-				raise [encounter, self, damage_multiplier].to_s if damage_multiplier > 8
+				#raise [encounter, @tokens, @current_effects, self, damage_multiplier].to_s if damage_multiplier > 8
 
 				damage_multiplier.times { run_hook(:extra_damage) }
 			end

@@ -32,15 +32,15 @@ module GauntletOfFools
 		Hero.new('Avenger', 16, 2) {
 			hooks(:end_of_turn) { |player| player.opponents.count { |p| p.dead? }.times { player.next_turn(:fallen_comrade) }} # has to have died on previous turns
 			hooks(:after_rolling) { |player, encounter, rolls|
-				n = player.number_of(:fallen_comrade)
-				player.decide(:use_avenger, rolls, n) && player.gain_temp(:attack,3*n) && rolls
+				n = player.number_of(:fallen_comrade) # CHECK: is this once per turn?
+				player.decide(:use_avenger, rolls, n) && player.spend_hero_token && player.gain_token(:temp_attack,3*n) && rolls
 			}
 		}
 
 		Hero.new('Barbarian', 18, 0)
 
 		Hero.new('Berserker', 14, 2) {
-			hooks(:before_rolling) { |player, encounter| player.decide(:use_berserker) && player.spend_hero_token && player.gain_temp(:dice, player.wounds) && player.gain(:berserk) }
+			hooks(:before_rolling) { |player, encounter| player.decide(:use_berserker) && player.spend_hero_token && player.gain_token(:temp_dice, player.wounds) && player.gain(:berserk) }
 			hooks(:after_attack) { |player, encounter| player.has?(:berserk) && player.has?(:killed_this_round) && player.gain(:dodge_next) }
 		}
 
@@ -56,7 +56,7 @@ module GauntletOfFools
 		Hero.new('Monk', 10, 4) { # FIXME: before_damage??? what hook is this supposed to be
 			hooks(:before_rolling) { |player, encounter| 
 				n = player.decide(:use_monk)
-				player.spend_hero_token(n) && player.gain_temp(:dice, n) && player.gain_temp(:defense, 4*n) 
+				player.spend_hero_token(n) && player.gain_token(:temp_dice, n) && player.gain_token(:temp_defense, 4*n) 
 			}
 		}
 
@@ -71,15 +71,15 @@ module GauntletOfFools
 		}
 
 		Hero.new('Priest', 14, 2) { # FIXME: zero attack = don't attack?
-			hooks(:before_encounter) { |player| player.wounds > 0 && player.decide(:use_priest) && player.spend_hero_token && player.heal(1) && player.gain(:zero_attack, :no_weapon_tokens)}
+			hooks(:before_rolling) { |player| player.wounds > 0 && player.decide(:use_priest) && player.spend_hero_token && player.heal(1) && player.gain(:zero_attack, :no_weapon_tokens)}
 		}
 
 		Hero.new('Prospector', 15, 0) {
-			hooks(:after_encounter) { |player,encounter| !player.dead? && player.gain_treasure(1)}
+			hooks(:after_encounter) { |player,encounter| !player.dead? && player.gain_treasure(1) }
 		}
 
 		Hero.new('Thief', 13, 2) {
-			hooks(:before_encounter) { |player, encounter| player.decide(:use_thief_for_trap) && player.spend_hero_token && player.gain(:dodge_next_trap) }
+			hooks(:before_rolling) { |player, encounter| player.decide(:use_thief_for_trap) && player.spend_hero_token && player.gain(:dodge_next_trap) }
 			hooks(:after_attack) { |player, encounter| player.decide(:use_thief) && player.spend_hero_token && player.gain(:dodge_next) }
 		}
 
@@ -97,15 +97,15 @@ module GauntletOfFools
 		}
 
 		Hero.new('Wizard', 15, 2) { # NB: should be able to skip demons
-			hooks(:before_encounter) { |player, encounter| player.decide(:use_wizard) && player.spend_hero_token && player.gain(:skip_encounter) }
+			hooks(:before_rolling) { |player, encounter| player.decide(:use_wizard) && player.spend_hero_token && player.gain(:skip_encounter) }
 		}
 
 		Hero.new('Zealot', 15, 2) { # zeroes defense but you can still raise it after, unlike zero_attack
 			hooks(:before_rolling) { |player, encounter| player.decide(:use_zealot) && player.spend_hero_token && player.gain(:kill_next) && player.gain(:zero_defense)}
 		}
 
-		Hero.new('Zombie', 13, 2) { # FIXME: getting hit by a giant scorpion should NOT let you play next turn for free
-			hooks(:start_of_turn) { |player, encounter| player.decide(:use_zombie) && player.spend_hero_token && player.gain(:cannot_die) }
+		Hero.new('Zombie', 13, 2) {
+			hooks(:start_of_turn) { |player, encounter| player.dead? && player.decide(:use_zombie) && player.spend_hero_token && player.gain(:cannot_die) }
 		}
 	end
 end

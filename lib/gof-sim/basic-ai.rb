@@ -97,7 +97,7 @@ module GauntletOfFools
 
 		def severe_damage
 			# FIXME: how to evaluate actual extra damage done 
-			@encounter.damage > 1 || (@encounter.damage > 0 && @encounter.hooks?(:extra_damage)) || (@player.has?(:take_double_damage) && @encounter.damage > 0)
+			@encounter.damage > 1 || (@encounter.damage > 0 && @encounter.hooks?(:extra_damage)) || (@player.has?(:take_double_damage) && @encounter.damage > 0) || @encounter.name == 'Giant Spider'
 		end
 
 		def add_dice_up_to_max rolls, max
@@ -259,7 +259,7 @@ module GauntletOfFools
 		end
 
 		def decide_whether_to_use_zombie
-			true # FIXME: implement this
+			kill_chance > 0.6
 		end
 
 		def decide_how_many_times_to_use_monk # FIXME: purely defensive consideration atm

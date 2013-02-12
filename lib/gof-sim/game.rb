@@ -144,6 +144,7 @@ module GauntletOfFools
 			@players.each do |player|
 				# This is the only hook that gets run for dead players.
 				# CHECK: zombie/wand interaction - only if alive?
+				player.current_encounter = encounter # FIXME: horrible
 				player.run_hook(:start_of_turn, self)
 				next if player.dead?
 
@@ -181,16 +182,14 @@ module GauntletOfFools
 				end
 			end
 
-			player.run_hook(:before_encounter)
+			player.run_hook(:before_rolling)
 
 			if player.has? :skip_encounter
 				log '%s skips the encounter completely.' % [player.name]
 			else
-				if encounter.non_combat? #.hooks?(:instead_of_combat)
+				if encounter.non_combat?
 					encounter.call_hook(:instead_of_combat, player)
 				else
-					player.run_hook(:before_rolling)
-
 					if !player.has? :kill_next
 						dice_roll = player.roll(player.attack_dice)
 						dice_result = player.run_hook(:after_rolling, dice_roll)

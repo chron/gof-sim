@@ -47,7 +47,7 @@ module GauntletOfFools
 	}
 
 	Encounter.new('Behemoth', 20, 21, 1, 4) {
-		hooks(:before_encounter) { |player, encounter| 
+		hooks(:before_rolling) { |player, encounter| 
 			if player.weapon_tokens >= 1 && player.decide(:skip_behemoth) 
 				player.gain_weapon_token(-1)
 				player.gain(:skip_encounter)
@@ -70,8 +70,8 @@ module GauntletOfFools
 		hooks(:extra_treasure) { |player| player.gain_token(:attack, 1) }
 	}
 
-	Encounter.new('Demon', 17, 17, 1, 4) {
-		hooks(:before_encounter) { |player| player.gain(:no_weapon_tokens, :no_hero_tokens) }
+	Encounter.new('Demon', 17, 17, 1, 4) { # FIXME: is this hook early enough?
+		hooks(:before_rolling) { |player| player.gain(:no_weapon_tokens, :no_hero_tokens) }
 	}
 
 	Encounter.new('Doppelganger', 14, 0, 1, 3) {# Doppelgänger
@@ -79,11 +79,12 @@ module GauntletOfFools
 		hooks(:after_rolling) { |player, encounter, rolls| encounter.defense = player.defense; rolls } # FIXME: or return nil?
 	}
 
+	# FIXME: adventurer+eb troll is out of control
 	Encounter.new('Extra Bitey') {
 		modifier!
 		hooks(:modifies_next_encounter) { |encounter| 
 			encounter.add_prefix(name)
-			encounter.hooks(:before_encounter) { |player, encounter| player.gain(:take_double_damage) }
+			encounter.hooks(:before_rolling) { |player, encounter| player.gain(:take_double_damage) }
 		}
 	}
 
@@ -119,7 +120,8 @@ module GauntletOfFools
 	}
 
 	Encounter.new('Giant Scorpion', 19, 12, 2, 3) {
-		hooks(:extra_damage) { |player| player.gain(:cannot_die) }
+		# Somewhat thug way to prevent zombies from getting a free turn by taking damage from this
+		hooks(:extra_damage) { |player| !player.has?(:cannot_die) && player.gain(:cannot_die) }
 	}
 
 	Encounter.new('Giant Spider', 17, 19, 0, 3) {
@@ -166,7 +168,7 @@ module GauntletOfFools
 	}
 
 	Encounter.new('Mercenary', 18, 20, 2, 4) {
-		hooks(:before_encounter) { |player, encounter| 
+		hooks(:before_rolling) { |player, encounter| 
 			if player.treasure >= 1 && player.decide(:skip_mercenary) 
 				player.gain_treasure(-1)
 				player.gain(:skip_encounter)

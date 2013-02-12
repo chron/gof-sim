@@ -10,8 +10,8 @@ T.times do |i|
 	#puts if (i+1)%50 == 0
 
 	p =	[
-		GauntletOfFools::Player.from_names('F', 'Barbarian', 'Flaming Sword'),
-		GauntletOfFools::Player.from_names('M', 'Barbarian', 'Mace')
+		GauntletOfFools::Player.from_names('B', 'Barbarian', 'Flaming Sword'),
+		GauntletOfFools::Player.from_names('Z', 'Zombie', 'Flaming Sword')
 	]
 
 	GauntletOfFools::EncounterPhase.new(:log => nil).run(*p)

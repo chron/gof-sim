@@ -41,7 +41,7 @@ module GauntletOfFools
 			hooks(:extra_treasure) { |player,encounter| gain_weapon_token(player)  }
 			hooks(:before_rolling) { |player,encounter| 
 				n = player.decide(:use_demonic_blade)
-				spend_weapon_token(player, n) && player.gain_temp(:dice, 2*n)
+				spend_weapon_token(player, n) && player.gain_token(:temp_dice, 2*n)
 			}
 		}
 
@@ -108,21 +108,21 @@ module GauntletOfFools
 		Weapon.new('Staff', 3, 4) {
 			hooks(:before_rolling) { |player, encounter|
 				n1, n2 = player.decide(:use_staff)
-				(n1 || n2) && spend_weapon_token(player, n1+n2) && player.gain_temp(:dice,2*n1) && player.gain_temp(:defense, 6*n2)
+				(n1 || n2) && spend_weapon_token(player, n1+n2) && player.gain_token(:temp_dice,2*n1) && player.gain_token(:temp_defense, 6*n2)
 			}
 		}
 
 		Weapon.new('Sword', 4, 2) {
 			hooks(:after_attack) { |player, encounter| 
 				n = player.decide(:use_sword)
-				spend_weapon_token(player, n) && player.gain_temp(:defense, 3*n)
+				spend_weapon_token(player, n) && player.gain_token(:temp_defense, 3*n)
 			}
 		}
 
 		Weapon.new('Throwing Stars', 2, 20) { 
 			hooks(:before_rolling) { |player,encounter| 
 				n = player.decide(:use_throwing_stars)
-				spend_weapon_token(player, n) && player.gain_temp(:dice, n)
+				spend_weapon_token(player, n) && player.gain_token(:temp_dice, n)
 			}
 		}
 

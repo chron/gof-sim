@@ -1,6 +1,6 @@
 require '../lib/gof-sim'
 
-total_seconds = 60 * 60 * 10
+total_seconds = 60 * 60 * 3
 players_per_game = 4
 
 results = Hash.new { |h,k| h[k] = [] }
@@ -10,7 +10,7 @@ combinations = GauntletOfFools::Hero.all.reject { |h| h.name == 'Armsmaster' }.m
 	weapons = weapons.product(weapons).reject { |w1,w2| w1 == w2 }.map(&:sort).uniq if h.number_of_weapons == 2
 
 	weapons.map do |w|
-		GauntletOfFools::Option.new(h, [*w], 'Nameless', []) #n = "#{h.name}#{[*w].map(&:name).join.tr(' ','')}"
+		GauntletOfFools::Option.new(h, [*w], 'Nameless', [])
 	end
 end.flatten
 
