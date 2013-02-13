@@ -1,12 +1,5 @@
 module GauntletOfFools
 	TOKEN_LOGIC = {
-		:one_use_die => GameObject.new('One-time Die') { 
-			hooks(:before_rolling) { |player, encounter| 
-				n = player.decide(:use_one_use_die)
-				player.spend_token(:one_use_die, n) && player.gain_token(:temp_dice, n) 
-			}
-		},
-
 		:poison => GameObject.new('Poison') {
 			hooks(:end_of_turn) { |player|
 				# FIXME: possible to have multiple poisons, eg via adventurer/extra_bitey?
@@ -41,8 +34,8 @@ module GauntletOfFools
 	end
 
 	class Player
-		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :delegates
-		attr_accessor :current_encounter, :opponents, :game
+		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :delegates, :decisions
+		attr_accessor :opponents, :game, :current_state, :next_state, :current_roll
 
 		PENALTY_TOKENS = %w(reduced_defense reduced_attack reduced_dice poison)
 		TEMP_TOKENS = %w(temp_defense temp_dice)
@@ -73,12 +66,14 @@ module GauntletOfFools
 
 			@delegates = []
 			@opponents = []
+			@decisions = []
 
 			@ai = BasicAI.new(self)
 
 			@age = 0
 			@fight_queue = []
 
+			@current_state, @next_state = nil, nil
 			@current_effects, @next_turn_effects = [], []
 			@tokens = Hash.new(0)
 
@@ -96,6 +91,8 @@ module GauntletOfFools
 				@current_effects = @current_effects.dup
 				@next_turn_effects = @next_turn_effects.dup
 				@tokens = @tokens.dup
+				@decisions = @decisions.dup
+				@delegates = @delegates.dup
 				@weapon_tokens = @weapon_tokens.dup
 				@game = nil
 				@ai = BasicAI.new(self) # FIXME: current_encounter won't be set?
@@ -115,10 +112,19 @@ module GauntletOfFools
 			new(*args)
 		end
 
+		def self.random
+			h = Hero.all.sample
+			w = Weapon.all.sample(h.number_of_weapons)
+			name = h.name[0...3] + w.map { |e| e.name[0...3] }.join
+
+			new(name, h, w, [])
+		end
+
+		# TODO: add a new GameObject to cache all static hooks using #absorb (hero+weapons+brags at least)
 		def run_hook hook, *data
 			# FIXME: encounter before weapons etc makes Gladiator AI difficult
 			# FIXME: one-use die before weapons with insta kill powers or encounter skips?
-			r = [@delegates, @hero, @current_encounter, @weapons, @brags].flatten.inject(data) do |d,obj| 
+			r = [@delegates, @hero, @fight_queue.first, @weapons, @brags].flatten.inject(data) do |d,obj| 
 				iv = obj && obj.call_hook(hook, self, current_encounter, *d)
 				iv ? [iv] : d
 			end
@@ -140,6 +146,24 @@ module GauntletOfFools
 			@fight_queue << encounter
 		end
 
+		def current_encounter
+			@fight_queue[0]
+		end
+
+		def must_decide decision
+			@decisions << decision if decision.relevant_to(self)
+		end
+
+		def make_decision decision, choice
+			raise 'NO' if !@decisions.include?(decision)
+
+			@decisions.delete(decision) if !decision.repeatable? || !choice
+			decision.apply_to(self) if choice
+
+			# Clear out other decisions that no longer apply, eg because you don't have the necessary tokens.
+			@decisions.delete_if { |d| !d.relevant_to(self) }
+		end
+
 		def chance_to_hit defense, bonus_dice=0 # for simulation purposes
 			return 1.0 if has? :kill_next
 			# FIXME: currently ignores one arm tied
@@ -147,7 +171,7 @@ module GauntletOfFools
 		end
 
 		def decide d, *args
-			@ai.decide d, @current_encounter, *args
+			@ai.decide d, @fight_queue.first, *args
 		end
 
 		def next_turn effect
@@ -282,11 +306,11 @@ module GauntletOfFools
 			tokens(:treasure)
 		end
 
-		def wound amount
+		def wound amount=1
 			gain_token(:wound, amount, 'receives', 'is cured of')
 		end
 
-		def heal amount
+		def heal amount=1
 			wound(-amount)
 		end
 
@@ -340,7 +364,7 @@ module GauntletOfFools
 			r
 		end
 
-		def calculate_attack dice
+		def calculate_attack dice=@current_roll
 			(dice.sum * dice_factor + bonus_attack) * attack_factor
 		end
 
@@ -359,15 +383,12 @@ module GauntletOfFools
 
 		def receive_treasure_from encounter
 			# FIXME: messages appear after their effects, difficult to fix
-			if hero.call_hook(:instead_of_treasure, self) # FIXME: only hero?
-				log("%s uses a power instead of gaining treasure." % [@name]) # FIXME
-			else
-				loot = encounter.treasure
-				loot -= 1 if has?(:blindfolded) && !has?(:ignore_brags) && has?(:dodged_this_round)
+			
+			loot = encounter.treasure
+			loot -= 1 if has?(:blindfolded) && !has?(:ignore_brags) && has?(:dodged_this_round)
 
-				gain_treasure(loot) if loot > 0
-				run_hook(:extra_treasure)
-			end
+			gain_treasure(loot) if loot > 0
+			run_hook(:extra_treasure)
 		end
 	end
 end

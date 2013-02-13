@@ -1,5 +1,6 @@
 $:<< File.expand_path(File.dirname(__FILE__))
 require 'gof-sim/support'
+require 'gof-sim/decision'
 require 'gof-sim/weapon'
 require 'gof-sim/brag'
 require 'gof-sim/hero'

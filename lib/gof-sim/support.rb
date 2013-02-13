@@ -41,11 +41,14 @@ module GauntletOfFools
 
 		def clone
 			new_obj = super
-
-			new_obj.instance_eval { @hooks = Hash.new { |h,k| h[k] = [] }}
+			new_obj.instance_eval { @hooks = Hash.new { |h,k| h[k] = [] } }
 			self.all_hooks.each { |hook,ary| new_obj.all_hooks[hook] = ary.dup }
 
 			new_obj
+		end
+
+		def absorb other
+			other.all_hooks.each { |hook,ary| @hooks[hook].concat(ary) }
 		end
 
 		def all_hooks

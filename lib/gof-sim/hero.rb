@@ -18,7 +18,7 @@ module GauntletOfFools
 		}
 
 		Hero.new('Armorer', 13, 2) {
-			hooks(:instead_of_treasure) { |player| player.decide(:use_armorer) && player.spend_hero_token && player.gain_token(:defense, 3) }
+			hooks(:after_combat) { |player| Decision['Use Armorer'] }
 		}
 
 		Hero.new('Armsmaster', 14, 0) { # PROMO CARD
@@ -26,14 +26,14 @@ module GauntletOfFools
 		} 
 
 		Hero.new('Artificer', 15, 2) {
-			hooks(:instead_of_treasure) { |player| player.decide(:use_artificer) && player.spend_hero_token && player.gain_token(:dice, 1) }
+			hooks(:after_combat) { |player| player.decide(:use_artificer) && player.spend_hero_token && player.gain_token(:dice, 1) }
 		}
 
 		Hero.new('Avenger', 16, 2) {
 			hooks(:end_of_turn) { |player| player.opponents.count { |p| p.dead? }.times { player.next_turn(:fallen_comrade) }} # has to have died on previous turns
-			hooks(:after_rolling) { |player, encounter, rolls|
+			hooks(:after_rolling) { |player, encounter|
 				n = player.number_of(:fallen_comrade) # CHECK: is this once per turn?
-				player.decide(:use_avenger, rolls, n) && player.spend_hero_token && player.gain_token(:temp_attack,3*n) && rolls
+				player.decide(:use_avenger, n) && player.spend_hero_token && player.gain_token(:temp_attack,3*n)
 			}
 		}
 
@@ -90,9 +90,9 @@ module GauntletOfFools
 
 		Hero.new('Warlord', 12, 2) {
 			hooks(:attack_dice) { |player, encounter, dice| dice + 1 }
-			hooks(:after_rolling) { |player, encounter, rolls| # FIXME: one by one? check mace etc too
-				n = player.decide(:use_warlord, rolls)
-				player.spend_hero_token(n) && (rolls + player.roll(n))
+			hooks(:after_rolling) { |player, encounter| # FIXME: one by one? check mace etc too
+				n = player.decide(:use_warlord)
+				player.spend_hero_token(n) && player.current_roll.concat(player.roll(n))
 			}
 		}
 

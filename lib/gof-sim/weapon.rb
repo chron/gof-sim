@@ -9,6 +9,10 @@ module GauntletOfFools
 			super(name)
 		end
 
+		def has_weapon_token player, amount=1
+			player.weapon_tokens(name) >= amount
+		end
+
 		def spend_weapon_token player, amount=1
 			player.spend_weapon_token(amount, name)
 		end
@@ -18,7 +22,7 @@ module GauntletOfFools
 		end
 
 		Weapon.new('Axe', 5, 2) {
-			hooks(:before_rolling) { |player,encounter| player.decide(:use_axe) && spend_weapon_token(player) && player.gain(:double_attack) && player.next_turn(:zero_attack) }
+			hooks(:before_rolling) { Decision['Use Axe'].from(self) }
 		}
 
 		Weapon.new('Bow', 4, 2) {
@@ -46,7 +50,7 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Flaming Sword', 5, 2) {
-			hooks(:before_rolling) { |player, encounter| player.decide(:use_flaming_sword) && spend_weapon_token(player) && player.wound(1) && player.gain(:kill_next, :dodge_next) }
+			hooks(:before_rolling) { |player, encounter| Decision['Use Flaming Sword'] }
 		}
 
 		Weapon.new('Holy Sword', 5, 2) {
@@ -54,15 +58,15 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Mace', 5, 2) {
-			hooks(:after_rolling) { |player, encounter, rolls|
-				n = player.decide(:use_mace, rolls)
-				spend_weapon_token(player, n) && rolls + player.roll(n)
+			hooks(:after_rolling) { |player, encounter|
+				n = player.decide(:use_mace)
+				spend_weapon_token(player, n) && player.current_roll.concat(player.roll(n))
 			}
 		}
 
 		Weapon.new('Morning Star', 5, 2) {
-			hooks(:after_rolling) { |player, encounter, rolls|
-				player.decide(:use_morning_star, rolls) && spend_weapon_token(player) && player.roll(rolls.size)
+			hooks(:after_rolling) { |player, encounter|
+				player.decide(:use_morning_star) && spend_weapon_token(player) && player.current_roll = player.roll(player.current_roll.size)
 			}
 		}
 
@@ -76,15 +80,12 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Scimitar', 4, 2) { # FIXME: can this be used multiple times?
-			# FIXME: doesn't have to be 2 lowest
-			hooks(:after_rolling) { |player, encounter, rolls|
-				if player.decide(:use_scimitar, rolls) && spend_weapon_token(player)
-					if rolls.empty?
-						[]
-					elsif rolls.size == 1
-						player.roll(1)
-					else
-						rolls.sort[2..-1] + player.roll(2)
+			hooks(:after_rolling) { |player, encounter|
+				if !player.current_roll.empty? && player.decide(:use_scimitar) && spend_weapon_token(player)
+					if rolls.size == 1
+						player.current_roll = player.roll(1)
+					else # FIXME: doesn't have to be 2 lowest
+						player.current_roll = player.current_roll.sort[2..-1] + player.roll(2)
 					end
 				end
 			}
@@ -95,14 +96,15 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Spear', 4, 2) {
-			hooks(:after_rolling) { |player, encounter, rolls|
-				player.decide(:use_spear, rolls) && spend_weapon_token(player) && [14] # FIXME: make sure this can't be rerolled or whatever
+			hooks(:after_rolling) { |player, encounter|
+				player.decide(:use_spear) && spend_weapon_token(player) && player.current_roll = [14] # FIXME: make sure this can't be rerolled?
 			}
 		}
 
 		Weapon.new('Spiked Shield', 3, 2) {
-			hooks(:defense) { |player, encounter, defense| defense + 1 } # FIXME: doesn't account for :dodge_next
-			hooks(:after_rolling) { |player, encounter, rolls| encounter.attack >= player.defense && player.decide(:use_spiked_shield, rolls) && spend_weapon_token(player) && player.gain(:kill_next) && rolls }
+			hooks(:defense) { |player, encounter, defense| defense + 1 }
+			# FIXME: doesn't account for :dodge_next properly, timing?
+			hooks(:after_rolling) { |player, encounter| encounter.attack >= player.defense && !player.has?(:dodge_next) && player.decide(:use_spiked_shield) && spend_weapon_token(player) && player.gain(:kill_next) }
 		}
 
 		Weapon.new('Staff', 3, 4) {

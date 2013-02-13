@@ -9,7 +9,7 @@ module GauntletOfFools
 
 		def decide decision, encounter, *args
 			PREFIXES.each do |p| 
-				if respond_to?(m = p + '_' + decision.to_s)
+				if respond_to?(m = p + '_' + decision.to_s.downcase.tr(' -','_'))
 					@encounter = encounter
 
 					return send(m, *args)
@@ -100,11 +100,11 @@ module GauntletOfFools
 			@encounter.damage > 1 || (@encounter.damage > 0 && @encounter.hooks?(:extra_damage)) || (@player.has?(:take_double_damage) && @encounter.damage > 0) || @encounter.name == 'Giant Spider'
 		end
 
-		def add_dice_up_to_max rolls, max
+		def add_dice_up_to_max max
 			return 0 if @player.has?(:zero_attack)
 			return max if about_to_die
 
-			current_attack = @player.calculate_attack(rolls)
+			current_attack = @player.calculate_attack
 
 			diff = @encounter.defense - current_attack
 
@@ -141,15 +141,12 @@ module GauntletOfFools
 			@player.weapons[0]
 		end
 
-		def decide_how_many_times_to_use_one_use_die
-			return 0 if @player.has?(:zero_attack)
-			return @player.tokens(:one_use_die) if about_to_die
-
-			0.upto(@player.tokens(:one_use_die)) do |v| 
-				return v if kill_chance_with_more_dice(v) >= 0.75
-			end
-
-			return 0
+		def decide_whether_to_use_one_use_die
+			return false if @player.has?(:zero_attack)
+			return true if about_to_die
+			return false if kill_chance > 0.75
+			# FIXME: may have more than 1
+			return true if kill_chance_with_more_dice(1) >= 0.75
 		end
 
 		# FIXME: ugly
@@ -208,8 +205,8 @@ module GauntletOfFools
 			!about_to_die && (@encounter.name == 'Giant Cockroach' || !@encounter.hooks?(:extra_treasure))
 		end
 
-		def decide_whether_to_use_avenger rolls, dead_opponents
-			delta = @encounter.defense - @player.calculate_attack(rolls) # FIXME: interaction with attack_factors etc
+		def decide_whether_to_use_avenger dead_opponents
+			delta = @encounter.defense - @player.calculate_attack # FIXME: interaction with attack_factors etc
 			delta > 0 && delta <= 3*dead_opponents 
 		end
 
@@ -246,8 +243,8 @@ module GauntletOfFools
 			about_to_die || kill_chance > 0.8
 		end
 
-		def decide_whether_to_use_warlord rolls
-			add_dice_up_to_max(rolls, @player.tokens(:hero_token))
+		def decide_whether_to_use_warlord
+			add_dice_up_to_max(@player.tokens(:hero_token))
 		end
 
 		def decide_whether_to_use_wizard # fixme: work with non_combat encounters
@@ -302,11 +299,11 @@ module GauntletOfFools
 			@player.has?(:poison) # FIXME: implement this
 		end
 
-		def decide_whether_to_use_morning_star rolls
-			return false if @player.calculate_attack(rolls) >= @encounter.defense
+		def decide_whether_to_use_morning_star
+			return false if @player.calculate_attack >= @encounter.defense
 
 			# FIXME: hmm
-			d = rolls.size - @player.attack_dice
+			d = @player.current_roll.size - @player.attack_dice
 			raise "what" if d < 0
 
 			kill_chance_with_more_dice(d) > 0.5
@@ -316,21 +313,21 @@ module GauntletOfFools
 			about_to_die || (getting_hit && kill_chance < 0.8) || (getting_hit && severe_damage)
 		end
 
-		def decide_whether_to_use_spear rolls
-			@player.calculate_attack(rolls) < @encounter.defense && @player.calculate_attack([14]) >= @encounter.defense 
+		def decide_whether_to_use_spear
+			@player.calculate_attack < @encounter.defense && @player.calculate_attack([14]) >= @encounter.defense 
 		end
 
 		def decide_whether_to_use_scepter
 			true
 		end
 
-		def decide_whether_to_use_scimitar rolls
-			return false if @player.calculate_attack(rolls) >= @encounter.defense
-			return @player.calculate_attack((rolls.sort[2..-1] || [])+[3,4]) >= @encounter.defense # average of 2 dice, this is dumb
+		def decide_whether_to_use_scimitar
+			return false if @player.calculate_attack >= @encounter.defense
+			return @player.calculate_attack((@player.current_roll.sort[2..-1] || [])+[3,4]) >= @encounter.defense # average of 2 dice, this is dumb
 		end
 
-		def decide_whether_to_use_spiked_shield rolls
-			@player.calculate_attack(rolls) < @encounter.defense
+		def decide_whether_to_use_spiked_shield
+			@player.calculate_attack < @encounter.defense
 		end
 
 		def decide_how_many_times_to_use_sword
@@ -346,8 +343,8 @@ module GauntletOfFools
 			end
 		end
 
-		def decide_how_many_times_to_use_mace rolls
-			add_dice_up_to_max(rolls, @player.weapon_tokens('Mace'))
+		def decide_how_many_times_to_use_mace
+			add_dice_up_to_max(@player.weapon_tokens('Mace'))
 		end
 
 		def decide_how_many_times_to_use_throwing_stars

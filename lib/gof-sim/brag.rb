@@ -21,7 +21,7 @@ module GauntletOfFools
 	}
 
 	Brag.new('With One Arm Tied') { # FIXME: at what point are these removed, eg can they be rerolled?
-		hooks(:after_rolling) { |player, encounter, rolls| !player.has?(:ignore_brags) && rolls.reject { |r| r <= 2 }}
+		hooks(:after_rolling) { |player, encounter| !player.has?(:ignore_brags) && player.current_rolls.delete_if { |r| r <= 2 }}
 	}
 
 	Brag.new('Hopping On One Leg') {

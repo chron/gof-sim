@@ -13,7 +13,7 @@ module GauntletOfFools
 		end
 
 		def display_name
-			name + (self.attack > 0 ? " (#{attack}/#{defense}/#{damage}#{hooks?(:extra_damage)? ?+ : ''}/#{treasure}#{hooks?(:extra_treasure)? ?+ : ''})" : '')
+			name + (self.non_combat? ? '' : " (#{attack}/#{defense}/#{damage}#{hooks?(:extra_damage)? ?+ : ''}/#{treasure}#{hooks?(:extra_treasure)? ?+ : ''})")
 		end
 
 		def add_prefix prefix # FIXME: this is kind of dumb
@@ -76,7 +76,7 @@ module GauntletOfFools
 
 	Encounter.new('Doppelganger', 14, 0, 1, 3) {# Doppelgänger
 		hooks(:encounter_selection) { |player, encounter| encounter.defense = player.defense } # this is so it displays correctish at start
-		hooks(:after_rolling) { |player, encounter, rolls| encounter.defense = player.defense; rolls } # FIXME: or return nil?
+		hooks(:after_rolling) { |player, encounter| encounter.defense = player.defense }
 	}
 
 	# FIXME: adventurer+eb troll is out of control
