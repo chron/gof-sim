@@ -5,18 +5,24 @@ module GauntletOfFools
 		def initialize player
 			@player = player
 			@encounter = nil
+			@owner = nil
 		end
 
 		def decide decision, encounter, *args
 			PREFIXES.each do |p| 
-				if respond_to?(m = p + '_' + decision.to_s.downcase.tr(' -','_'))
+				if respond_to?(m = p + '_' + decision.name.downcase.tr(' -','_'))
 					@encounter = encounter
+					@owner = decision.owner
 
 					return send(m, *args)
 				end
 			end
 
 			raise "#{decision}?"
+		end
+
+		def weapon_tokens
+			@player.weapon_tokens(@owner)
 		end
 
 		def future_self
@@ -159,7 +165,7 @@ module GauntletOfFools
 		end
 
 		# Encounter decisions
-		def decide_whether_to_bet_on_gladiator
+		def decide_how_many_times_to_bet_on_gladiator
 			kill_chance > 0.6 ? [5, @player.treasure].min : 0
 		end
 
@@ -343,8 +349,9 @@ module GauntletOfFools
 			end
 		end
 
-		def decide_how_many_times_to_use_mace
-			add_dice_up_to_max(@player.weapon_tokens('Mace'))
+		def decide_whether_to_use_mace
+			delta = @player.calculate_attack - @encounter.defense
+			delta < 0 && delta > -3.5 * weapon_tokens || (about_to_die && delta >= -6 * weapon_tokens)
 		end
 
 		def decide_how_many_times_to_use_throwing_stars
@@ -360,9 +367,9 @@ module GauntletOfFools
 
 		def decide_how_many_times_to_use_demonic_blade
 			return 0 if @player.has?(:zero_attack)
-			return @player.weapon_tokens('Demonic Blade') if about_to_die
+			return weapon_tokens if about_to_die
 
-			0.upto(@player.weapon_tokens('Demonic Blade')) do |v| 
+			0.upto(weapon_tokens) do |v| 
 				return v if kill_chance_with_more_dice(2*v) >= 0.75
 			end
 

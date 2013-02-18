@@ -9,24 +9,18 @@ module GauntletOfFools
 			super(name)
 		end
 
-		def has_weapon_token player, amount=1
-			player.weapon_tokens(name) >= amount
-		end
-
-		def spend_weapon_token player, amount=1
-			player.spend_weapon_token(amount, name)
-		end
-
-		def gain_weapon_token player, amount=1
-			player.gain_weapon_token(amount, name)
-		end
-
 		Weapon.new('Axe', 5, 2) {
-			hooks(:before_rolling) { Decision['Use Axe'].from(self) }
+			decision_at(:before_rolling) {
+				requires_weapon_token
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.gain(:double_attack) && player.next_turn(:zero_attack) }
+			}
 		}
 
 		Weapon.new('Bow', 4, 2) {
-			hooks(:after_attack) { |player,encounter| player.has?(:killed_this_round) && player.decide(:use_bow) && spend_weapon_token(player) && player.gain(:dodge_next) }
+			decision_at(:after_attack) { 
+				hooks(:prereqs) { |player| player.has?(:killed_this_round) && player.weapon_tokens(@owner) >= 1 }
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.gain(:dodge_next) }
+			}
 		}
 
 		Weapon.new('Cleaver', 1, 0) {
@@ -34,33 +28,47 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Dagger', 3, 4) {
-			hooks(:before_rolling) { |player,encounter| player.decide(:use_dagger) && spend_weapon_token(player) && player.gain(:kill_next) }
+			decision_at(:before_rolling) { 
+				requires_weapon_token
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.gain(:kill_next) }
+			}
 		}
 
 		Weapon.new('Deadly Fists', 3, 2) {
-			hooks(:before_rolling) { |player,encounter| player.decide(:use_deadly_fists) && spend_weapon_token(player) && player.gain(:kill_next, :dodge_next) }
+			decision_at(:before_rolling) { 
+				requires_weapon_token
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.gain(:kill_next, :dodge_next) }
+			}
 		}
 
 		Weapon.new('Demonic Blade', 4, 0) {
-			hooks(:extra_treasure) { |player,encounter| gain_weapon_token(player)  }
-			hooks(:before_rolling) { |player,encounter| 
-				n = player.decide(:use_demonic_blade)
-				spend_weapon_token(player, n) && player.gain_token(:temp_dice, 2*n)
+			hooks(:extra_treasure) { |player| player.gain_weapon_token(1, @owner)  }
+			decision_at(:before_rolling) {
+				requires_weapon_token
+				limit_values_to { |value| value >= 0 && value <= player.weapon_tokens(@owner) }
+				hooks(:apply) { |player, value| player.spend_weapon_token(@owner) && player.gain_token(:temp_dice, 2*value) }
 			}
 		}
 
 		Weapon.new('Flaming Sword', 5, 2) {
-			hooks(:before_rolling) { |player, encounter| Decision['Use Flaming Sword'] }
+			decision_at(:before_rolling) {
+				hooks(:prereqs) { |player| player.weapon_tokens(@owner) >= 1 }
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.wound && player.gain(:kill_next, :dodge_next) }
+			}
 		}
 
 		Weapon.new('Holy Sword', 5, 2) {
-			hooks(:before_rolling) { |player, encounter| player.decide(:use_holy_sword) && spend_weapon_token(player) && player.discard_all_penalty_tokens && player.gain(:ignore_boasts) }
+			decision_at(:before_rolling) {
+				requires_weapon_token # FIXME: check for penalty tokens / boasts
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.discard_all_penalty_tokens && player.gain(:ignore_boasts) }
+			}
 		}
 
-		Weapon.new('Mace', 5, 2) {
-			hooks(:after_rolling) { |player, encounter|
-				n = player.decide(:use_mace)
-				spend_weapon_token(player, n) && player.current_roll.concat(player.roll(n))
+		Weapon.new('Mace', 5, 2) { # CHECK: how do these after_rolling dice interact with multiple encounters in a turn?
+			decision_at(:after_rolling) {
+				repeatable!
+				requires_weapon_token
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.current_roll.concat(player.roll(1)) }
 			}
 		}
 
@@ -76,7 +84,10 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Scepter', 4, 2) {
-			hooks(:before_rolling) { |player, encounter| encounter.attack < encounter.defense && player.decide(:use_scepter) && spend_weapon_token(player) && player.gain(:kill_next) }
+			decision_at(:before_rolling) { 
+				hooks(:prereqs) { |player| player.current_encounter.attack < player.current_encounter.defense && player.weapon_tokens(@owner) >= 1 }
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.gain(:kill_next) }
+			}
 		}
 
 		Weapon.new('Scimitar', 4, 2) { # FIXME: can this be used multiple times?
@@ -92,12 +103,17 @@ module GauntletOfFools
 		}
 
 		Weapon.new('Sling', 3, 2) {
-			hooks(:before_rolling) { |player, encounter| encounter.attack >= 20 && player.decide(:use_sling) && spend_weapon_token(player) && player.gain(:kill_next, :dodge_next) }
+			decision_at(:before_rolling) { 
+				hooks(:prereqs) { |player| player.current_encounter.attack >= 20 && player.weapon_tokens(@owner) >= 1 }
+				hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.gain(:kill_next, :dodge_next) }
+			}
 		}
 
 		Weapon.new('Spear', 4, 2) {
-			hooks(:after_rolling) { |player, encounter|
-				player.decide(:use_spear) && spend_weapon_token(player) && player.current_roll = [14] # FIXME: make sure this can't be rerolled?
+			decision_at(:after_rolling) {
+				requires_weapon_token
+				# FIXME: make sure this can't be rerolled?
+				hooks(:apply) { |player| player.spend_weapon_token(player) && player.current_roll = [14] }
 			}
 		}
 

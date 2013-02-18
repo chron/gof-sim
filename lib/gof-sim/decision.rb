@@ -1,11 +1,37 @@
 module GauntletOfFools
 	class Decision < GameObject
+		attr_reader :owner
+
+		def initialize name, owner=nil
+			super(name)
+
+			@owner = owner
+			@validator = nil
+		end
+
+		def limit_values_to v=nil, &b
+			raise 'supplier block and value for valdiator' if v && b
+			@validator = v || b
+		end
+
 		def relevant_to player
 			!hooks?(:prereqs) || call_hook(:prereqs, player)
 		end
 
-		def apply_to player
-			call_hook(:apply, player) if relevant_to(player)
+		def make player, choice
+			choice ? apply_to(player, choice) : decline_to(player)
+			call_hook(:after, player)
+			# Return a boolean indicating if the decision can be made again
+			repeatable? && choice
+		end
+
+		def apply_to player, v=nil
+			raise 'Invalid' if !validate(v)
+			call_hook(:apply, player, v) if relevant_to(player)
+		end
+
+		def validate value
+			@validator.nil? || (@validator.respond_to?(:call) ? @validator.call(value) : @validator.include?(value))
 		end
 
 		def decline_to player
@@ -27,31 +53,17 @@ module GauntletOfFools
 		def requires_hero_token
 			hooks(:prereqs) { |player| player.tokens(:hero_token) >= 1 }
 		end
-
-		def from owner
-			@owner = owner.name
-			self
-		end
 	end
 
-	Decision.new('Use Axe') {
-		requires_weapon_token
-		hooks(:apply) { |player| player.spend_weapon_token(@owner) && player.gain(:double_attack) && player.next_turn(:zero_attack) }
-	}
-
-	Decision.new('Use Armorer') {
-		requires_hero_token
-		hooks(:apply) { |player| player.spend_hero_token && player.gain_token(:defense, 3) && player.gain(:no_treasure) }
+	Decision.new('Visit Encounter') {
+		hooks(:prereqs) { |player| player.has?(:optional_encounter) }
+		hooks(:decline) { |player| player.gain(:skip_encounter) }
+		hooks(:after) { |player| player.clear_effect(:optional_encounter) }
 	}
 
 	Decision.new('Use One-use Die') {
 		repeatable!
 		hooks(:prereqs) { |player| player.tokens(:one_use_die) >= 1 }
 		hooks(:apply) { |player| player.spend_token(:one_use_die) && player.gain_token(:temp_dice) }
-	}
-
-	Decision.new('Use Flaming Sword') {
-		hooks(:prereqs) { |player| player.weapon_tokens('Flaming Sword') >= 1 }
-		hooks(:apply) { |player| player.spend_weapon_token('Flaming Sword') && player.wound && player.gain(:kill_next, :dodge_next) }
 	}
 end

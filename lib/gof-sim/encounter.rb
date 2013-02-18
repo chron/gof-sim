@@ -13,7 +13,7 @@ module GauntletOfFools
 		end
 
 		def display_name
-			name + (self.non_combat? ? '' : " (#{attack}/#{defense}/#{damage}#{hooks?(:extra_damage)? ?+ : ''}/#{treasure}#{hooks?(:extra_treasure)? ?+ : ''})")
+			name + (self.non_combat? ? '' : " (#{attack}/#{defense > 0 ? defense : ??}/#{damage}#{hooks?(:extra_damage)? ?+ : ''}/#{treasure}#{hooks?(:extra_treasure)? ?+ : ''})")
 		end
 
 		def add_prefix prefix # FIXME: this is kind of dumb
@@ -39,20 +39,27 @@ module GauntletOfFools
 	}
 
 	Encounter.new('Bee Swarm', 10, 6, 1, 0) {
-		hooks(:extra_treasure) { |player, encounter| player.decide(:take_gold_from_bees) ? player.gain_treasure(2) : player.gain_token(:hero_token) }
+		decision_at(:extra_treasure, 'Take Gold from Bees') {
+			hooks(:apply) { |player| player.gain_treasure(2) }
+			hooks(:decline) { |player| player.gain_token(:hero_token) }
+		}
 	}
 
 	Encounter.new('Banshee', 23, 16, 0, 4) {
-		hooks(:extra_damage) { |player, encounter| player.decide(:take_wound_from_banshee) ? player.wound(1) : player.gain_token(:reduced_defense, 3) }
+		decision_at(:extra_damage, 'Take Wound from Banshee') { 
+			hooks(:apply) { |player| player.wound(1) }
+			hooks(:decline) { |player| player.gain_token(:reduced_defense, 3) }
+		}
 	}
 
 	Encounter.new('Behemoth', 20, 21, 1, 4) {
-		hooks(:before_rolling) { |player, encounter| 
-			if player.weapon_tokens >= 1 && player.decide(:skip_behemoth) 
-				player.gain_weapon_token(-1)
+		decision_at(:encounter_selection, 'Skip Behemoth') {
+			hooks(:prereqs) { |player| player.weapon_tokens >= 1 }
+			hooks(:apply) { |player|
+				player.gain_weapon_token(-1) # FIXME: spend?
 				player.gain(:skip_encounter)
 				player.log '%s pays 1 weapon token to skip the fight.' % [player.name]
-			end
+			}
 		}
 	}
 
@@ -70,8 +77,8 @@ module GauntletOfFools
 		hooks(:extra_treasure) { |player| player.gain_token(:attack, 1) }
 	}
 
-	Encounter.new('Demon', 17, 17, 1, 4) { # FIXME: is this hook early enough?
-		hooks(:before_rolling) { |player| player.gain(:no_weapon_tokens, :no_hero_tokens) }
+	Encounter.new('Demon', 17, 17, 1, 4) { # FIXME: wizard should be able to skip this
+		hooks(:encounter_selection) { |player| player.gain(:no_weapon_tokens, :no_hero_tokens) }
 	}
 
 	Encounter.new('Doppelganger', 14, 0, 1, 3) {# Doppelgänger
@@ -84,7 +91,7 @@ module GauntletOfFools
 		modifier!
 		hooks(:modifies_next_encounter) { |encounter| 
 			encounter.add_prefix(name)
-			encounter.hooks(:before_rolling) { |player, encounter| player.gain(:take_double_damage) }
+			encounter.hooks(:encounter_selection) { |player, encounter| player.gain(:take_double_damage) }
 		}
 	}
 
@@ -135,8 +142,15 @@ module GauntletOfFools
 	Encounter.new('Giant Turtle', 9, 14, 1, 1)
 
 	Encounter.new('Gladiator', 15, 15, 1, 0) { # PROMO
-		hooks(:before_rolling) { |player, encounter| @bet = player.decide(:bet_on_gladiator); player.gain_treasure(-@bet) }
-		hooks(:extra_treasure) { |player| player.gain_treasure(2 * @bet) }
+		decision_at(:before_rolling, "Bet on Gladiator") { 
+			limit_values_to { |value| v >= 0 && v <= 5 && v <= player.treasure }
+			#hooks(:prereqs) { |player| player.treasure > 0 }
+			hooks(:apply) { |player, value| 
+				player.gain_treasure(-value) 
+				value.times { player.gain(:gladiator_bet) }
+			}
+		}
+		hooks(:extra_treasure) { |player| player.gain_treasure(2 * player.number_of(:gladiator_bet)) }
 	}
 
 	Encounter.new('Goblin', 13, 10, 1, 2)
@@ -156,24 +170,33 @@ module GauntletOfFools
 	}
 
 	Encounter.new('Healing Pool') {
-		hooks(:instead_of_combat) { |player| player.decide(:heal_from_healing_pool) ? player.heal(1) : player.discard_all_penalty_tokens }
+		decision_at(:instead_of_combat, 'Heal from Healing Pool') { 
+			hooks(:apply) { |player| player.heal(1) }
+			hooks(:decline) { |player| player.discard_all_penalty_tokens }
+		}
 	}
 
 	Encounter.new('Hellhound', 16, 10, 1, 3) {
-		hooks(:extra_treasure) { |player| player.decide(:take_extra_hellhound_treasure) && player.wound(1) && player.gain_treasure(3) }
+		decision_at(:extra_treasure, 'Take Extra Hellhound Treasure') { 
+			hooks(:apply) { |player| player.wound(1) && player.gain_treasure(3) }
+		}
 	}
 
 	Encounter.new('Magic Pool') {
-		hooks(:instead_of_combat) { |player| player.decide(:take_weapon_from_magic_pool) ? player.gain_weapon_token : player.gain_token(:hero_token) }
+		decision_at(:instead_of_combat, 'Take Weapon from Magic Pool') { 
+			hooks(:apply) { |player| player.gain_weapon_token }
+			hooks(:decline) { |player| player.gain_token(:hero_token) }
+		}
 	}
 
 	Encounter.new('Mercenary', 18, 20, 2, 4) {
-		hooks(:before_rolling) { |player, encounter| 
-			if player.treasure >= 1 && player.decide(:skip_mercenary) 
+		decision_at(:encounter_selection, 'Skip Mercenary') {
+			hooks(:prereqs) { |player| player.treasure >= 1 }
+			hooks(:apply) { |player|
 				player.gain_treasure(-1)
 				player.gain(:skip_encounter)
 				player.log '%s pays 1 coin to skip the fight.' % [player.name]
-			end
+			}
 		}
 	}
 
@@ -206,15 +229,16 @@ module GauntletOfFools
 
 	Encounter.new('Skelephant', 13, 8, 1, 2)
 
-	Encounter.new('Side Passage') {
-		hooks(:encounter_selection) { |player, encounter, game|
-			if @options.nil?
-				@options = [game.draw_encounter, game.draw_encounter].compact # CHECK: what happens if you run out of cards?
-				player.log 'Side Passage options: %s.' % [@options*' or ']
-			end
-		} 
-		hooks(:instead_of_combat) { |player| player.queue_fight(player.decide(:which_encounter, *@options)) } # FIXME: is it ok to assume #decide will return a valid selection
-	}
+	# FIXME: figure out how to store state in Player
+	# Encounter.new('Side Passage') { # FIXME: same options next game
+	# 	hooks(:encounter_selection) { |player, encounter, game|
+	# 		if @options.nil?
+	# 			@options = [game.draw_encounter, game.draw_encounter].compact # CHECK: what happens if you run out of cards?
+	# 			player.log 'Side Passage options: %s.' % [@options*' or ']
+	# 		end
+	# 	} 
+	# 	hooks(:instead_of_combat) { |player| player.queue_fight(player.decide(:which_encounter, *@options)) } # FIXME: is it ok to assume #decide will return a valid selection
+	# }
 
 	Encounter.new('Slime Monster', 22, 18, 1, 4) {
 		hooks(:extra_damage) { |player| player.gain_token(:reduced_dice, 1) }

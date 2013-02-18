@@ -49,12 +49,6 @@ module GauntletOfFools
 	end
 
 	class EncounterPhase
-		# def self.test_encounter *e
-		# 	obj = new
-		# 	obj.instance_eval { @encounters = e }
-		# 	obj
-		# end
-
 		def initialize players, args={}
 			raise "no players" if players.empty?
 
@@ -151,7 +145,7 @@ module GauntletOfFools
 		def phase_turn_start player
 			player.begin_turn
 			player.queue_fight(@current_encounter)
-			player.run_hook(:start_of_turn, self)
+			run_hook(player, :start_of_turn)
 
 			if player.dead?
 				player.next_state = :turn_complete
@@ -161,13 +155,9 @@ module GauntletOfFools
 		end
 
 		def phase_encounter_start player
-			player.run_hook(:encounter_selection, self)
+			run_hook(player, :encounter_selection)
 			
-			if player.has?(:optional_encounter)
-				@decisions[player] << Decision.new('Visit Encounter') { # FIXME: move this to decision.rb
-					hooks(:apply) { |player| player.gain(:skip_encounter) }
-				}
-			end
+			player.must_decide(Decision['Visit Encounter'])
 
 			player.next_state = :before_rolling
 		end
@@ -199,7 +189,7 @@ module GauntletOfFools
 		def phase_roll player
 			if !player.has?(:kill_next)
 				player.current_roll = player.roll(player.attack_dice)
-				player.run_hook(:after_rolling)
+				run_hook(player, :after_rolling)
 			end
 
 			player.next_state = :trade_blows
@@ -229,7 +219,7 @@ module GauntletOfFools
 				player.log "%s misses %s." % [player.name, encounter.name]
 			end
 
-			player.run_hook(:after_attack)
+			run_hook(player, :after_attack)
 			player.next_state = :after_combat
 		end
 
@@ -237,6 +227,7 @@ module GauntletOfFools
 			encounter = player.current_encounter
 
 			if player.has?(:dodge_next)
+				player.log "%s dodges the attack." % [player.name]
 				player.clear_effect(:dodge_next)
 				player.gain(:dodged_this_round)
 			else
@@ -254,7 +245,7 @@ module GauntletOfFools
 			player.receive_treasure_from(encounter) if player.has?(:killed_this_round) && !player.has?(:no_treasure)
 			player.take_damage_from(encounter) if !player.has?(:dodged_this_round)
 
-			player.run_hook(:after_encounter)
+			run_hook(player, :after_encounter)
 			player.next_state = :encounter_end
 		end
 
@@ -274,16 +265,15 @@ module GauntletOfFools
 		end
 
 		def phase_turn_end player
-			player.run_hook(:end_of_turn)
-
-			if player.dead?
-				player.log("%s is defeated at age %i with %i coins." % [player.name, player.age, player.treasure])
-			end
-
+			run_hook(player, :end_of_turn)
 			player.next_state = :turn_complete
 		end
 
 		def phase_turn_complete player
+			if player.dead?
+				player.log("%s is defeated at age %i with %i coins." % [player.name, player.age, player.treasure])
+			end
+
 			if @players.all? { |p| p.dead? }
 				game_end
 			elsif @players.all? { |p| p.current_state == :turn_complete }
@@ -299,8 +289,9 @@ module GauntletOfFools
 		end
 
 		def run_hook player, hook
-			r = player.run_hook(hook)
-			[*r].each { |d| player.must_decide(d) }
+			decisions = player.run_hook(hook)
+			#p [player, hook, decisions]
+			decisions.each { |d| player.must_decide(d) }
 		end
 
 		def log_player_summary

@@ -67,6 +67,11 @@ module GauntletOfFools
 			@hooks[hook_name] << b
 		end
 
+		def decision_at hook, name=nil, &b
+			decision = Decision.new(name || 'Use ' + @name, self, &b)
+			hooks(hook) { decision }
+		end
+
 		def call_hook hook_name, *args
 			# TODO: This should use the same return-chain semantics as Player#run_hooks
 			!@hooks[hook_name].empty? && @hooks[hook_name].map { |h| h[*args] }.last

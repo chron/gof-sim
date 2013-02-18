@@ -10,7 +10,15 @@ module GauntletOfFools
 		end
 
 		Hero.new('Adventurer', 15, 2) {
-			hooks(:after_encounter) { |player, encounter| !player.has?(:second_adventure) && player.decide(:use_adventurer) && player.spend_hero_token && player.gain(:second_adventure) && player.queue_fight(encounter)}
+			decision_at(:after_encounter) {
+				requires_hero_token
+				hooks(:prereqs) { |player| !player.has?(:second_adventure) }
+				hooks(:apply) { |player|
+					player.spend_hero_token
+					player.gain(:second_adventure)
+					player.queue_fight(player.current_encounter)
+				}
+			}
 		}
 
 		Hero.new('Alchemist', 14, 2) {
@@ -18,7 +26,10 @@ module GauntletOfFools
 		}
 
 		Hero.new('Armorer', 13, 2) {
-			hooks(:after_combat) { |player| Decision['Use Armorer'] }
+			decision_at(:after_combat) {
+				requires_hero_token
+				hooks(:apply) { |player| player.spend_hero_token && player.gain_token(:defense, 3) && player.gain(:no_treasure) }
+			}
 		}
 
 		Hero.new('Armsmaster', 14, 0) { # PROMO CARD

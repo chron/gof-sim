@@ -122,13 +122,9 @@ module GauntletOfFools
 
 		# TODO: add a new GameObject to cache all static hooks using #absorb (hero+weapons+brags at least)
 		def run_hook hook, *data
-			# FIXME: encounter before weapons etc makes Gladiator AI difficult
-			# FIXME: one-use die before weapons with insta kill powers or encounter skips?
-			r = [@delegates, @hero, @fight_queue.first, @weapons, @brags].flatten.inject(data) do |d,obj| 
-				iv = obj && obj.call_hook(hook, self, current_encounter, *d)
-				iv ? [iv] : d
-			end
-			r.size == 1 ? r.first : r
+			[@delegates, @hero, @fight_queue.first, @weapons, @brags].flatten.compact.map do |obj| 
+				obj.call_hook(hook, self, current_encounter, *data)
+			end.select { |v| v }
 		end
 
 		def to_s
@@ -151,14 +147,15 @@ module GauntletOfFools
 		end
 
 		def must_decide decision
+			p [?!, self, current_encounter, decision] if !decision.is_a?(Decision)
 			@decisions << decision if decision.relevant_to(self)
 		end
 
 		def make_decision decision, choice
 			raise 'NO' if !@decisions.include?(decision)
 
-			@decisions.delete(decision) if !decision.repeatable? || !choice
-			decision.apply_to(self) if choice
+			keep_decision = decision.make(self, choice)
+			@decisions.delete(decision) unless keep_decision
 
 			# Clear out other decisions that no longer apply, eg because you don't have the necessary tokens.
 			@decisions.delete_if { |d| !d.relevant_to(self) }
@@ -212,12 +209,12 @@ module GauntletOfFools
 		def gain_weapon_token n=1, weapon=nil
 			i = if @weapons.size > 1
 				if weapon
-					@weapons.index { |w| w.name == weapon }
+					@weapons.index(weapon)
 				else
 					if n < 0 # If we're reducing tokens, check which weapons have tokens available
 						weapons_with_tokens = @weapon_tokens.map.with_index { |v,i| i if v > 0 }.compact
 						if weapons_with_tokens.empty?
-							0 # TODO: check this is ok
+							0
 						elsif weapons_with_tokens.size == 1
 							weapons_with_tokens.first
 						else
@@ -248,7 +245,7 @@ module GauntletOfFools
 			return false if has? :no_weapon_tokens
 
 			i = if @weapons.size > 1
-				@weapons.index { |w| w.name == weapon }
+				@weapons.index(weapon)
 			else
 				0
 			end
@@ -261,7 +258,7 @@ module GauntletOfFools
 		end
 
 		def weapon_tokens weapon=nil
-			weapon ? @weapon_tokens[@weapons.index { |w| w.name == weapon }] : @weapon_tokens.sum
+			weapon ? @weapon_tokens[@weapons.index(weapon)] : @weapon_tokens.sum
 		end
 
 		def spend_hero_token n=1
@@ -331,20 +328,20 @@ module GauntletOfFools
 		def defense
 			return 0 if has?(:zero_defense)
 			subtotal = @hero.defense + tokens(:defense) + tokens(:temp_defense) - tokens(:reduced_defense)
-			run_hook(:defense, subtotal)
+			#run_hook(:defense, subtotal)
 		end
 
 		def attack_dice
 			return 0 if has?(:zero_attack)
 			w = @weapons.size == 1 ? @weapons.first : decide(:which_weapon_dice, @weapons)
 			subtotal = w.dice + tokens(:dice) + tokens(:temp_dice) - tokens(:reduced_dice)
-			run_hook(:attack_dice, subtotal)
+			#run_hook(:attack_dice, subtotal)
 		end
 
 		def bonus_attack
 			return 0 if has?(:zero_attack)
 			subtotal = tokens(:attack) + tokens(:temp_attack) - tokens(:reduced_attack)
-			run_hook(:bonus_attack, subtotal)
+			#run_hook(:bonus_attack, subtotal)
 		end
 
 		def attack_factor
