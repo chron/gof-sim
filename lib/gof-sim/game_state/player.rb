@@ -2,7 +2,7 @@ module GauntletOfFools
 	TOKEN_LOGIC = {
 		:poison => GameObject.new('Poison') {
 			hooks(:end_of_turn) { |player|
-				# FIXME: possible to have multiple poisons, eg via adventurer/extra_bitey?
+				# CHECK: possible to have multiple poisons, eg via adventurer/extra_bitey?
 				if player.tokens(:poison) > 0 && !player.has?(:recently_poisoned)
 					player.log 'Poison courses through %s\'s veins.' % [player.name]
 					player.wound(1)
@@ -11,31 +11,9 @@ module GauntletOfFools
 		}
 	}
 
-	class Option < Struct.new(:hero, :weapons, :current_owner, :brags, :parent_opt)
-		def inspect
-			"%s/%s+%p%s" % [hero.name, weapons.map(&:name)*',', brags, current_owner ? " (#{current_owner})" : '']
-		end
-
-		def is_assigned?
-			current_owner
-		end
-
-		def to_player new_name=nil
-			Player.new(new_name || current_owner, hero, weapons, brags)
-		end
-
-		def copy
-			Option.new(hero, weapons, current_owner, brags, self)
-		end
-
-		def with_any_new_brag
-			(GauntletOfFools::Brag.all - brags).map { |b| Option.new(hero, weapons, current_owner, brags + [b], self)}
-		end
-	end
-
 	class Player
 		attr_reader :name, :hero, :weapons, :brags, :age, :fight_queue, :delegates, :decisions
-		attr_accessor :opponents, :game, :current_state, :next_state, :current_roll
+		attr_accessor :opponents, :game, :current_state, :current_roll
 
 		PENALTY_TOKENS = %w(reduced_defense reduced_attack reduced_dice poison)
 		TEMP_TOKENS = %w(temp_defense temp_dice)
@@ -68,12 +46,12 @@ module GauntletOfFools
 			@opponents = []
 			@decisions = []
 
-			@ai = BasicAI.new(self)
+			@ai = WeightAI.new(self)
 
 			@age = 0
 			@fight_queue = []
 
-			@current_state, @next_state = nil, nil
+			@current_state = nil
 			@current_effects, @next_turn_effects = [], []
 			@tokens = Hash.new(0)
 
@@ -83,10 +61,9 @@ module GauntletOfFools
 
 		def clone
 			obj = super
-			depth = @name[/\(D:(\d+)\)$/, 1] || 0
 
 			obj.instance_eval do
-				@name = "Future #{@name} (D:#{depth.to_i+1})"
+				@name = @name =~ /^Future/ ? @name.gsub(/(\d+)\)$/) { "#{$1.to_i + 1})" } : "Future #{@name} (D:1)"
 				@fight_queue = @fight_queue.dup
 				@current_effects = @current_effects.dup
 				@next_turn_effects = @next_turn_effects.dup
@@ -122,9 +99,13 @@ module GauntletOfFools
 
 		# TODO: add a new GameObject to cache all static hooks using #absorb (hero+weapons+brags at least)
 		def run_hook hook, *data
-			[@delegates, @hero, @fight_queue.first, @weapons, @brags].flatten.compact.map do |obj| 
+			r = [@delegates, @hero, current_encounter, @weapons, @brags].flatten.compact.map do |obj| 
 				obj.call_hook(hook, self, current_encounter, *data)
-			end.select { |v| v }
+			end.flatten.select { |v| v }
+
+			r.each { |v| must_decide(v) if v.is_a?(Decision) }
+
+			r
 		end
 
 		def to_s
@@ -146,18 +127,20 @@ module GauntletOfFools
 			@fight_queue[0]
 		end
 
-		def must_decide decision
-			p [?!, self, current_encounter, decision] if !decision.is_a?(Decision)
-			@decisions << decision if decision.relevant_to(self)
-		end
-
 		def make_decision decision, choice
 			raise 'NO' if !@decisions.include?(decision)
 
 			keep_decision = decision.make(self, choice)
 			@decisions.delete(decision) unless keep_decision
 
-			# Clear out other decisions that no longer apply, eg because you don't have the necessary tokens.
+			clear_irrelevant_decisions
+		end
+
+		def must_decide *decisions
+			@decisions.concat(decisions.select { |d| d.relevant_to(self) })
+		end
+
+		def clear_irrelevant_decisions
 			@decisions.delete_if { |d| !d.relevant_to(self) }
 		end
 
@@ -167,8 +150,8 @@ module GauntletOfFools
 			CHANCE_TO_HIT[[attack_dice+bonus_dice, bonus_attack, attack_factor, dice_factor, defense]]
 		end
 
-		def decide d, *args
-			@ai.decide d, @fight_queue.first, *args
+		def decide d
+			@ai.decide(d)
 		end
 
 		def next_turn effect
@@ -176,20 +159,12 @@ module GauntletOfFools
 			@next_turn_effects << effect
 		end
 
-		def begin_turn
-			@age += 1
-			@current_effects.clear
-			@current_effects.concat(@next_turn_effects)
-			@next_turn_effects.clear
-			TEMP_TOKENS.each { |t| @tokens.delete(t.intern) }
-		end
-
 		def number_of effect
 			@current_effects.count(effect)
 		end
 
 		def gain *effects
-			#effects.each { |e| log '%s gains an effect: %s' % [@name, e] }
+			effects.each { |e| log '%s gains an effect: %s' % [@name, e] }
 			@current_effects.concat(effects)
 		end
 
@@ -218,10 +193,12 @@ module GauntletOfFools
 						elsif weapons_with_tokens.size == 1
 							weapons_with_tokens.first
 						else
-							@weapons.index(decide(:which_weapon_token_to_discard, weapons_with_tokens.map { |i| @weapons[i] }))
+							# FIXME: @weapons.index(decide(:which_weapon_token_to_discard, weapons_with_tokens.map { |i| @weapons[i] }))
+							0
 						end
 					else
-						@weapons.index(decide(:which_weapon_to_gain_token_for))
+						# FIXME: @weapons.index(decide(:which_weapon_to_gain_token_for))
+						0
 					end
 				end
 			else
@@ -327,21 +304,20 @@ module GauntletOfFools
 
 		def defense
 			return 0 if has?(:zero_defense)
-			subtotal = @hero.defense + tokens(:defense) + tokens(:temp_defense) - tokens(:reduced_defense)
-			#run_hook(:defense, subtotal)
+			@hero.defense + tokens(:defense) + tokens(:temp_defense) - tokens(:reduced_defense)
 		end
 
 		def attack_dice
 			return 0 if has?(:zero_attack)
-			w = @weapons.size == 1 ? @weapons.first : decide(:which_weapon_dice, @weapons)
-			subtotal = w.dice + tokens(:dice) + tokens(:temp_dice) - tokens(:reduced_dice)
-			#run_hook(:attack_dice, subtotal)
+			# FIXME: decision point here for armsmaster
+			#w = @weapons.size == 1 ? @weapons.first : decide(:which_weapon_dice, @weapons)
+			w = @weapons.first
+			w.dice + tokens(:dice) + tokens(:temp_dice) - tokens(:reduced_dice)
 		end
 
 		def bonus_attack
 			return 0 if has?(:zero_attack)
-			subtotal = tokens(:attack) + tokens(:temp_attack) - tokens(:reduced_attack)
-			#run_hook(:bonus_attack, subtotal)
+			tokens(:attack) + tokens(:temp_attack) - tokens(:reduced_attack)
 		end
 
 		def attack_factor
@@ -366,20 +342,15 @@ module GauntletOfFools
 		end
 
 		def take_damage_from encounter
-			if hero.call_hook(:instead_of_damage, self, encounter)
-				log "%s uses a power instead of taking damage." % [@name]
-			else
-				damage_multiplier = 2 ** number_of(:take_double_damage)
-				wound(encounter.damage * damage_multiplier) if encounter.damage > 0
+			return if has?(:no_damage)
 
-				#raise [encounter, @tokens, @current_effects, self, damage_multiplier].to_s if damage_multiplier > 8
-
-				damage_multiplier.times { run_hook(:extra_damage) }
-			end
+			damage_multiplier = 2 ** number_of(:take_double_damage)
+			wound(encounter.damage * damage_multiplier) if encounter.damage > 0
+			damage_multiplier.times { run_hook(:extra_damage) }
 		end
 
 		def receive_treasure_from encounter
-			# FIXME: messages appear after their effects, difficult to fix
+			return if has?(:no_treasure)
 			
 			loot = encounter.treasure
 			loot -= 1 if has?(:blindfolded) && !has?(:ignore_brags) && has?(:dodged_this_round)

@@ -32,54 +32,7 @@ module GauntletOfFools
 			f.run_hook(:end_of_turn)
 
 			f
-		end
-
-		# FIXME: these vary a lot, especially hero/weapon tokens
-		WEIGHTS = {
-			:treasure => 1,
-			:wound => -5,
-			:poison => -10,
-			:hero_token => 3,
-			:weapon_token => 3,
-			:attack => 1,
-			:defense => 2,
-			:dice => 5,
-			:one_use_die => 2,
-			:reduced_defense => -2,
-			:reduced_dice => -5,
-			:reduced_attack => -1
-		}
-
-		def self.evaluate_state player
-			WEIGHTS.inject(0) do |sum,(token,weight)|
-				amount = token == :weapon_token ? player.weapon_tokens : player.tokens(token)
-				sum + amount * weight
-			end
-		end
-
-		def value_of_encounter encounter
-			p1 = @player.clone
-			p1.take_damage_from(encounter) if getting_hit(encounter)
-			
-			p2 = p1.clone
-			p2.receive_treasure_from(encounter)
-			p1.run_hook(:end_of_turn) # after_encounter
-			p2.run_hook(:end_of_turn)
-
-			current_value = BasicAI.evaluate_state(@player)
-			value_of_miss = BasicAI.evaluate_state(p1)
-			value_of_hit = BasicAI.evaluate_state(p2)
-
-			(value_of_hit - current_value) * kill_chance(encounter) + (value_of_miss - current_value) * (1 - kill_chance(encounter))
-		end
-
-		#def expected_wounds_per_encounter
-		#	Encounter.all.map { |e| @player.defense <= e.attack ? e.damage : 0 }.mean
-		#end
-
-		#def expected_gold_per_encounter
-		#	Encounter.all.map { |e| @player.chance_to_hit(e.defense) * e.treasure }.mean
-		#end
+		end		
 
 		def about_to_die # FIXME: doesn't run all hooks, eg treasure for mushroom man
 			future_self.dead?
@@ -334,6 +287,10 @@ module GauntletOfFools
 
 		def decide_whether_to_use_spiked_shield
 			@player.calculate_attack < @encounter.defense
+		end
+
+		def decide_whether_to_use_whip
+			about_to_die || (getting_hit && severe_damage)
 		end
 
 		def decide_how_many_times_to_use_sword

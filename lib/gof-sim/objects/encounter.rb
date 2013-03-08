@@ -143,9 +143,9 @@ module GauntletOfFools
 
 	Encounter.new('Gladiator', 15, 15, 1, 0) { # PROMO
 		decision_at(:before_rolling, "Bet on Gladiator") { 
-			limit_values_to { |value| v >= 0 && v <= 5 && v <= player.treasure }
-			#hooks(:prereqs) { |player| player.treasure > 0 }
-			hooks(:apply) { |player, value| 
+			only_if { |player| player.treasure > 0 }
+			limit_values_to { |player| 0..[5, player.treasure].min }
+			hooks(:apply) { |player, value|
 				player.gain_treasure(-value) 
 				value.times { player.gain(:gladiator_bet) }
 			}

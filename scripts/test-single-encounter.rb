@@ -1,4 +1,5 @@
 require '../lib/gof-sim'
+$stdout.sync = true
 
 #p GauntletOfFools::Encounter.all[0].attack#.size; exit
 #p GauntletOfFools::Hero.all.map { |w| w.name.length }.sort.reverse[0,2]
@@ -7,10 +8,10 @@ players = [
 	#GauntletOfFools::Player.from_names('A', 'Alchemist', 'Mace'),
 	#GauntletOfFools::Player.from_names('B', 'Armorer', 'Cleaver'),
 	#GauntletOfFools::Player.from_names('C', 'Barbarian', 'Sword', 'With a Hangover'),
-	GauntletOfFools::Player.from_names('A', 'Adventurer', 'Mace'),
+	#GauntletOfFools::Player.from_names('A', 'Adventurer', 'Spiked Shield'),
 	#GauntletOfFools::Player.from_names('N', 'Ninja', 'Demonic Blade')
 	#GauntletOfFools::Player.from_names('Z', 'Zombie', 'Mace')
-	#GauntletOfFools::Player.random,
+	GauntletOfFools::Player.random,
 	#GauntletOfFools::Player.random
 	#GauntletOfFools::Player.from_names('D', 'Armsmaster', ['Throwing Stars', 'Staff'])
 ]
@@ -27,7 +28,7 @@ limit = 0
 until limit > 100 || g.finished?
 	limit += 1
 	players.each do |p|
-		g.advance_until_event(p)
+		p.advance_until_event!
 		p.decisions.each do |d| 
 			r = p.decide(d)
 			puts [p.name, p.current_encounter, d, r].inspect
